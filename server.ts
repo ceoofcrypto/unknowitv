@@ -39,12 +39,18 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
-const DATA_DIR = path.join(__dirname, 'data');
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const DATA_DIR = fs.existsSync(path.join(process.cwd(), 'data'))
+  ? path.join(process.cwd(), 'data')
+  : path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch {
+  // Read-only filesystem in serverless environments (e.g. Vercel)
 }
 
 const CURRENT_DB_SCHEMA_VERSION = 3;
@@ -2350,8 +2356,14 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`तपाईंको TV server running on http://0.0.0.0:${PORT}`);
-    startBackgroundChannelUpdater();
+    if (!process.env.VERCEL) {
+      startBackgroundChannelUpdater();
+    }
   });
 }
 
-startServer();
+export default app;
+
+if (!process.env.VERCEL && !process.env.NOW_REGION) {
+  startServer();
+}
