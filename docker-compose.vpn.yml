@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  tapaiko-tv-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: tapaiko-tv-vpn-gateway
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - VPN_ROUTING_MODE=selective
+      - INDIA_EGRESS_DEFAULT=103.189.24.12
+    volumes:
+      - ./data:/app/data
+      - ./vpn-configs:/etc/openvpn
+    sysctls:
+      - net.ipv4.ip_forward=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/iptv/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -1,0 +1,35 @@
+# Dockerfile.gateway
+# Production container for तपाईंको TV with OpenVPN, policy routing, and split-tunnel networking
+FROM node:20-bookworm-slim
+
+# Install system dependencies: OpenVPN, iptables, iproute2, curl, ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openvpn \
+    iptables \
+    iproute2 \
+    curl \
+    ca-certificates \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy dependency specifications
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy application code
+COPY . .
+RUN npm run build
+
+# Create directory for VPN configurations & logs
+RUN mkdir -p /etc/openvpn /var/log/tapaiko-vpn
+
+# Expose default HTTP application port
+EXPOSE 3000
+
+# Enable IP forwarding and execute start script
+ENV NODE_ENV=production
+ENV PORT=3000
+
+CMD ["node", "server.ts"]
