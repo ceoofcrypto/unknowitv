@@ -68,31 +68,35 @@ export function resolvePlayableStreamUrl(rawUrl: string): PlayableStreamResoluti
     return { playUrl: trimmed, streamType: 'direct', isEmbed: false };
   }
 
-  // 4. YouTube Watch / Live / Shorts / Share URLs -> Embed with Autoplay
+  // 4. YouTube Watch / Live / Shorts / Share URLs -> Embed with Autoplay and JS API for play/pause/mute control
   const ytWatchMatch = trimmed.match(/(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
   if (ytWatchMatch && ytWatchMatch[1]) {
     const videoId = ytWatchMatch[1];
     return {
-      playUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&playsinline=1&controls=1&rel=0`,
+      playUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&playsinline=1&controls=1&rel=0&enablejsapi=1`,
       streamType: 'iframe',
       isEmbed: true,
     };
   }
   if (lower.includes('youtube.com/embed/')) {
     const hasQuery = trimmed.includes('?');
-    const autoParam = hasQuery ? '&autoplay=1&mute=0&playsinline=1' : '?autoplay=1&mute=0&playsinline=1';
+    const autoParam = hasQuery ? '&autoplay=1&mute=0&playsinline=1&enablejsapi=1' : '?autoplay=1&mute=0&playsinline=1&enablejsapi=1';
+    let resUrl = trimmed.includes('autoplay=') ? trimmed : `${trimmed}${autoParam}`;
+    if (!resUrl.includes('enablejsapi=')) {
+      resUrl = resUrl.includes('?') ? `${resUrl}&enablejsapi=1` : `${resUrl}?enablejsapi=1`;
+    }
     return {
-      playUrl: trimmed.includes('autoplay=') ? trimmed : `${trimmed}${autoParam}`,
+      playUrl: resUrl,
       streamType: 'iframe',
       isEmbed: true,
     };
   }
 
-  // 5. Vimeo URLs -> Embed with Autoplay
+  // 5. Vimeo URLs -> Embed with Autoplay and API for controls
   const vimeoMatch = trimmed.match(/vimeo\.com\/(?:video\/)?([0-9]+)/i);
   if (vimeoMatch && vimeoMatch[1]) {
     return {
-      playUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&muted=0`,
+      playUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&muted=0&api=1`,
       streamType: 'iframe',
       isEmbed: true,
     };
@@ -121,13 +125,18 @@ export function resolvePlayableStreamUrl(rawUrl: string): PlayableStreamResoluti
   }
 
   // 8. General Web Stream Links (pages.dev, crichd, sportlink, custom embeds)
-  // Ensure autoplay=1 is present in the URL query string
+  // Ensure autoplay=1 is present in the URL query string and clear forced mute parameters
   let finalEmbedUrl = trimmed;
   if (!finalEmbedUrl.includes('autoplay=')) {
     finalEmbedUrl = finalEmbedUrl.includes('?')
       ? `${finalEmbedUrl}&autoplay=1`
       : `${finalEmbedUrl}?autoplay=1`;
   }
+
+  finalEmbedUrl = finalEmbedUrl
+    .replace(/([?&])mute=1/g, '$1mute=0')
+    .replace(/([?&])muted=1/g, '$1muted=0')
+    .replace(/([?&])muted=true/g, '$1muted=false');
 
   return {
     playUrl: finalEmbedUrl,

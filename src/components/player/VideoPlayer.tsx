@@ -60,6 +60,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onChannelBroken,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -121,6 +122,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const effectiveStreamUrl = detectedStream?.url || resolvedInitial.playUrl;
   const streamFormat = detectedStream?.format || resolvedInitial.streamType;
+  const isWebMode = streamFormat === 'iframe' || streamFormat === 'web_link';
   const cleanLogo = sanitizeLogoUrl(channel.logoUrl);
   const { initials, paletteClass } = getChannelMonogram(channel.name);
 
@@ -382,37 +384,180 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [channel.id, effectiveStreamUrl]);
 
+  // Dispatches media playback commands (play, pause, mute, unmute, setVolume)
+  // to iframes via DOM (same-origin), YouTube Player API, Vimeo API, and generic HTML5 postMessage conventions
+  const dispatchIframeMediaCommand = useCallback(
+    (command: 'play' | 'pause' | 'mute' | 'unmute' | 'setVolume', value?: number) => {
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+
+      // 1. Same-Origin direct DOM manipulation
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          const mediaElements = doc.querySelectorAll<HTMLMediaElement>('video, audio');
+          mediaElements.forEach((media) => {
+            try {
+              if (command === 'play') media.play().catch(() => {});
+              if (command === 'pause') media.pause();
+              if (command === 'mute') media.muted = true;
+              if (command === 'unmute') {
+                media.muted = false;
+                if (value !== undefined) media.volume = value;
+                else if (media.volume === 0) media.volume = 0.8;
+              }
+              if (command === 'setVolume' && value !== undefined) {
+                media.volume = value;
+                media.muted = value === 0;
+              }
+            } catch {
+              // Ignore single media element error
+            }
+          });
+        }
+      } catch {
+        // Cross-origin restriction expected
+      }
+
+      const win = iframe.contentWindow;
+      if (!win) return;
+
+      // Focus the iframe so browser audio/keyboard can route to it
+      try {
+        iframe.focus();
+      } catch {
+        // ignore
+      }
+
+      // 2. YouTube IFrame Player API
+      try {
+        const ytFunc =
+          command === 'play'
+            ? 'playVideo'
+            : command === 'pause'
+            ? 'pauseVideo'
+            : command === 'mute'
+            ? 'mute'
+            : command === 'unmute'
+            ? 'unMute'
+            : 'setVolume';
+        const ytArgs = command === 'setVolume' ? [(value ?? 1) * 100] : [];
+        win.postMessage(
+          JSON.stringify({ event: 'command', func: ytFunc, args: ytArgs }),
+          '*'
+        );
+        if (command === 'unmute') {
+          const volTarget = ((value ?? volume) || 0.8) * 100;
+          win.postMessage(
+            JSON.stringify({ event: 'command', func: 'setVolume', args: [volTarget] }),
+            '*'
+          );
+        }
+      } catch {
+        // ignore
+      }
+
+      // 3. Vimeo Player API
+      try {
+        if (command === 'play') {
+          win.postMessage(JSON.stringify({ method: 'play' }), '*');
+        } else if (command === 'pause') {
+          win.postMessage(JSON.stringify({ method: 'pause' }), '*');
+        } else if (command === 'mute') {
+          win.postMessage(JSON.stringify({ method: 'setVolume', value: 0 }), '*');
+        } else if (command === 'unmute') {
+          win.postMessage(JSON.stringify({ method: 'setVolume', value: (value ?? volume) || 0.8 }), '*');
+        } else if (command === 'setVolume' && value !== undefined) {
+          win.postMessage(JSON.stringify({ method: 'setVolume', value }), '*');
+        }
+      } catch {
+        // ignore
+      }
+
+      // 4. Universal HTML5 / VideoJS / JWPlayer / Clappr / Plyr postMessage conventions
+      try {
+        win.postMessage({ type: `player:${command}`, action: command, command, value }, '*');
+        win.postMessage({ type: command, value }, '*');
+        win.postMessage({ action: command, value }, '*');
+        win.postMessage({ event: command, data: value }, '*');
+        win.postMessage(command, '*');
+      } catch {
+        // ignore
+      }
+    },
+    [volume]
+  );
+
   const handlePlayPause = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
-    } else {
-      videoRef.current.pause();
-      setIsPlaying(false);
+    // A. Native Video Element
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+      return;
+    }
+
+    // B. Web Stream / IFrame Mode
+    if (isWebMode) {
+      const nextPlaying = !isPlaying;
+      setIsPlaying(nextPlaying);
+      dispatchIframeMediaCommand(nextPlaying ? 'play' : 'pause');
     }
   };
 
   const handleToggleMute = () => {
-    if (!videoRef.current) return;
     const newMuted = !isMuted;
-    videoRef.current.muted = newMuted;
     isMutedRef.current = newMuted;
     setIsMuted(newMuted);
-    if (!newMuted && videoRef.current.volume === 0) {
-      videoRef.current.volume = 0.8;
+
+    const effectiveVol = (!newMuted && volume === 0) ? 0.8 : volume;
+    if (!newMuted && volume === 0) {
       setVolume(0.8);
+    }
+
+    // A. Native Video Element
+    if (videoRef.current) {
+      videoRef.current.muted = newMuted;
+      if (!newMuted && videoRef.current.volume === 0) {
+        videoRef.current.volume = 0.8;
+      }
+      return;
+    }
+
+    // B. Web Stream / IFrame Mode
+    if (isWebMode) {
+      dispatchIframeMediaCommand(newMuted ? 'mute' : 'unmute', effectiveVol);
     }
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!videoRef.current) return;
     const newVol = parseFloat(e.target.value);
-    videoRef.current.volume = newVol;
     setVolume(newVol);
-    if (newVol > 0 && isMuted) {
-      videoRef.current.muted = false;
+
+    const shouldUnmute = newVol > 0 && isMuted;
+    if (shouldUnmute) {
       isMutedRef.current = false;
       setIsMuted(false);
+    }
+
+    // A. Native Video Element
+    if (videoRef.current) {
+      videoRef.current.volume = newVol;
+      if (shouldUnmute) {
+        videoRef.current.muted = false;
+      }
+      return;
+    }
+
+    // B. Web Stream / IFrame Mode
+    if (isWebMode) {
+      dispatchIframeMediaCommand('setVolume', newVol);
+      if (shouldUnmute) {
+        dispatchIframeMediaCommand('unmute', newVol);
+      }
     }
   };
 
@@ -508,9 +653,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {streamFormat === 'iframe' || streamFormat === 'web_link' ? (
           <div className="relative w-full h-full bg-black">
             <iframe
+              ref={iframeRef}
               src={effectiveStreamUrl}
               title={eventName || channel.name}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+              allow="accelerometer; autoplay *; clipboard-write; encrypted-media *; gyroscope; picture-in-picture; web-share; fullscreen *"
               allowFullScreen
               referrerPolicy="no-referrer-when-downgrade"
               className="w-full h-full border-0"
