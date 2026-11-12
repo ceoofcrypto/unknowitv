@@ -36,8 +36,12 @@ import {
   clearLocalRecentChannels,
   getSavedTheme,
   saveTheme,
+  getLocalCustomEvents,
+  getLocalVpnProfiles,
+  getDeletedEventIds,
 } from './utils/storage.ts';
 import { filterChannels, isAdminEmailAuthorized } from './utils/channels.ts';
+import { subscribeToRtdbEvents, bootstrapRtdbDatabase } from './services/rtdbData.ts';
 
 import { Header } from './components/layout/Header.tsx';
 import { Footer } from './components/layout/Footer.tsx';
@@ -137,6 +141,7 @@ export default function App() {
     const storedAdmin = getStoredAdminUser();
     if (storedAdmin && isAdminEmailAuthorized(storedAdmin.email)) {
       setAdminUser(storedAdmin);
+      bootstrapRtdbDatabase(getLocalCustomEvents(), getLocalVpnProfiles()).catch(() => {});
     } else if (storedAdmin) {
       clearAdminSession();
     }
@@ -147,12 +152,24 @@ export default function App() {
         const restored = await restoreAdminSessionFromFirebaseUser(fbUser);
         if (restored) {
           setAdminUser(restored.user);
+          bootstrapRtdbDatabase(getLocalCustomEvents(), getLocalVpnProfiles()).catch(() => {});
         }
       } else if (fbUser) {
         // Immediately sign out any non-admin Google user
         await signOutFirebaseAdmin();
         clearAdminSession();
         setAdminUser(null);
+      }
+    });
+
+    // 4. Subscribe to Realtime Database Events for live instant multi-browser synchronization
+    const unsubscribeRtdb = subscribeToRtdbEvents((liveEvents) => {
+      if (liveEvents && liveEvents.length > 0) {
+        const deletedIds = new Set(getDeletedEventIds());
+        const filtered = liveEvents.filter((e) => !deletedIds.has(e.id));
+        if (filtered.length > 0) {
+          setEvents(filtered);
+        }
       }
     });
 
@@ -199,6 +216,7 @@ export default function App() {
     return () => {
       clearInterval(pollInterval);
       unsubscribeAuth();
+      unsubscribeRtdb();
     };
   }, [loadPlatformData]);
 

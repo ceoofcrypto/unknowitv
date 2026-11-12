@@ -23,6 +23,27 @@ import {
   syncAnnouncementToFirestore,
   syncSettingsToFirestore,
 } from './firestoreData.ts';
+import {
+  getRtdbEvents,
+  syncEventToRtdb,
+  deleteEventFromRtdb,
+  getRtdbChannels,
+  syncChannelToRtdb,
+  deleteChannelFromRtdb,
+  getRtdbCategories,
+  syncCategoryToRtdb,
+  getRtdbAnnouncements,
+  syncAnnouncementToRtdb,
+  getRtdbSettings,
+  syncSettingsToRtdb,
+  getRtdbVpnProfiles,
+  syncVpnProfileToRtdb,
+  deleteVpnProfileFromRtdb,
+  getRtdbEventMediaSources,
+  syncEventMediaSourceToRtdb,
+  deleteEventMediaSourceFromRtdb,
+  bootstrapRtdbDatabase,
+} from './rtdbData.ts';
 import { INITIAL_EVENTS } from '../data/seedData.ts';
 import {
   getLocalCustomEvents,
@@ -184,6 +205,7 @@ export async function createChannel(data: Partial<Channel>): Promise<Channel> {
   }
   const created: Channel = await res.json();
   syncChannelToFirestore(created).catch(() => {});
+  syncChannelToRtdb(created).catch(() => {});
   return created;
 }
 
@@ -196,6 +218,7 @@ export async function updateChannel(id: string, data: Partial<Channel>): Promise
   if (!res.ok) throw new Error('Failed to update channel');
   const updated: Channel = await res.json();
   syncChannelToFirestore(updated).catch(() => {});
+  syncChannelToRtdb(updated).catch(() => {});
   return updated;
 }
 
@@ -206,11 +229,38 @@ export async function deleteChannel(id: string): Promise<void> {
   });
   if (!res.ok) throw new Error('Failed to delete channel');
   deleteChannelFromFirestore(id).catch(() => {});
+  deleteChannelFromRtdb(id).catch(() => {});
 }
 
 export async function fetchEvents(includeHidden = false): Promise<FeaturedEvent[]> {
   const localEvents = getLocalCustomEvents();
   const deletedEventIds = new Set(getDeletedEventIds());
+
+  // 1. First priority: Realtime Database cloud truth (synchronized across all browsers)
+  try {
+    const cloudEvents = await getRtdbEvents();
+    if (cloudEvents && cloudEvents.length > 0) {
+      const map = new Map<string, FeaturedEvent>();
+      for (const ev of cloudEvents) {
+        if (!deletedEventIds.has(ev.id)) {
+          map.set(ev.id, ev);
+        }
+      }
+      for (const ev of localEvents) {
+        if (!deletedEventIds.has(ev.id)) {
+          map.set(ev.id, ev);
+        }
+      }
+      const merged = Array.from(map.values());
+      if (merged.length > 0) {
+        return merged;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load events from Realtime Database:', err);
+  }
+
+  // 2. Fall back to Server API
   try {
     const res = await fetch('/api/events', {
       headers: getHeaders(includeHidden),
@@ -279,6 +329,8 @@ export async function createEvent(data: Partial<FeaturedEvent>): Promise<Feature
 
   // Immediate local persistence
   saveLocalCustomEvent(candidate);
+  // Realtime Database cloud persistence
+  syncEventToRtdb(candidate).catch(() => {});
 
   try {
     const res = await fetch('/api/events', {
@@ -289,11 +341,12 @@ export async function createEvent(data: Partial<FeaturedEvent>): Promise<Feature
     if (res.ok) {
       const created: FeaturedEvent = await res.json();
       saveLocalCustomEvent(created);
+      syncEventToRtdb(created).catch(() => {});
       syncEventToFirestore(created).catch(() => {});
       return created;
     }
   } catch (err) {
-    console.warn('Server event creation failed, relying on local storage:', err);
+    console.warn('Server event creation failed, relying on cloud/local storage:', err);
   }
 
   syncEventToFirestore(candidate).catch(() => {});
@@ -310,6 +363,7 @@ export async function updateEvent(id: string, data: Partial<FeaturedEvent>): Pro
     updatedAt: new Date().toISOString(),
   };
   saveLocalCustomEvent(updatedCandidate);
+  syncEventToRtdb(updatedCandidate).catch(() => {});
 
   try {
     const res = await fetch(`/api/events/${id}`, {
@@ -320,11 +374,12 @@ export async function updateEvent(id: string, data: Partial<FeaturedEvent>): Pro
     if (res.ok) {
       const updated: FeaturedEvent = await res.json();
       saveLocalCustomEvent(updated);
+      syncEventToRtdb(updated).catch(() => {});
       syncEventToFirestore(updated).catch(() => {});
       return updated;
     }
   } catch (err) {
-    console.warn('Server event update failed, relying on local storage:', err);
+    console.warn('Server event update failed, relying on cloud/local storage:', err);
   }
 
   syncEventToFirestore(updatedCandidate).catch(() => {});
@@ -334,6 +389,7 @@ export async function updateEvent(id: string, data: Partial<FeaturedEvent>): Pro
 export async function deleteEvent(id: string): Promise<void> {
   markEventDeleted(id);
   deleteLocalCustomEvent(id);
+  deleteEventFromRtdb(id).catch(() => {});
   try {
     await fetch(`/api/events/${id}`, {
       method: 'DELETE',
@@ -346,6 +402,15 @@ export async function deleteEvent(id: string): Promise<void> {
 }
 
 export async function fetchCategories(includeHidden = false): Promise<Category[]> {
+  try {
+    const cloudCats = await getRtdbCategories();
+    if (cloudCats && cloudCats.length > 0) {
+      return includeHidden ? cloudCats : cloudCats.filter((c) => c.isActive);
+    }
+  } catch {
+    // fallback
+  }
+
   const res = await fetch('/api/categories', {
     headers: getHeaders(includeHidden),
   });
@@ -362,6 +427,7 @@ export async function createCategory(data: Partial<Category>): Promise<Category>
   if (!res.ok) throw new Error('Failed to create category');
   const created: Category = await res.json();
   syncCategoryToFirestore(created).catch(() => {});
+  syncCategoryToRtdb(created).catch(() => {});
   return created;
 }
 
@@ -374,10 +440,20 @@ export async function updateCategory(id: string, data: Partial<Category>): Promi
   if (!res.ok) throw new Error('Failed to update category');
   const updated: Category = await res.json();
   syncCategoryToFirestore(updated).catch(() => {});
+  syncCategoryToRtdb(updated).catch(() => {});
   return updated;
 }
 
 export async function fetchAnnouncements(includeHidden = false): Promise<Announcement[]> {
+  try {
+    const cloudAnn = await getRtdbAnnouncements();
+    if (cloudAnn && cloudAnn.length > 0) {
+      return includeHidden ? cloudAnn : cloudAnn.filter((a) => a.isActive && a.isPublished);
+    }
+  } catch {
+    // fallback
+  }
+
   const res = await fetch('/api/announcements', {
     headers: getHeaders(includeHidden),
   });
@@ -394,6 +470,7 @@ export async function createAnnouncement(data: Partial<Announcement>): Promise<A
   if (!res.ok) throw new Error('Failed to create announcement');
   const created: Announcement = await res.json();
   syncAnnouncementToFirestore(created).catch(() => {});
+  syncAnnouncementToRtdb(created).catch(() => {});
   return created;
 }
 
@@ -406,10 +483,18 @@ export async function updateAnnouncement(id: string, data: Partial<Announcement>
   if (!res.ok) throw new Error('Failed to update announcement');
   const updated: Announcement = await res.json();
   syncAnnouncementToFirestore(updated).catch(() => {});
+  syncAnnouncementToRtdb(updated).catch(() => {});
   return updated;
 }
 
 export async function fetchSettings(): Promise<AppSettings> {
+  try {
+    const cloudSettings = await getRtdbSettings();
+    if (cloudSettings) return cloudSettings;
+  } catch {
+    // fallback
+  }
+
   const res = await fetch('/api/settings');
   if (!res.ok) throw new Error('Failed to load settings');
   return res.json();
@@ -424,6 +509,7 @@ export async function updateSettings(data: Partial<AppSettings>): Promise<AppSet
   if (!res.ok) throw new Error('Failed to update settings');
   const updated: AppSettings = await res.json();
   syncSettingsToFirestore(updated).catch(() => {});
+  syncSettingsToRtdb(updated).catch(() => {});
   return updated;
 }
 
@@ -444,6 +530,7 @@ export async function loginAdminWithGoogle(): Promise<{ token: string; user: Adm
   const data = await res.json();
   setAdminSession(data.token, data.user);
   bootstrapFirestoreDatabase().catch(() => {});
+  bootstrapRtdbDatabase(getLocalCustomEvents(), getLocalVpnProfiles()).catch(() => {});
   return data;
 }
 
@@ -466,6 +553,7 @@ export async function restoreAdminSessionFromFirebaseUser(
     const data = await res.json();
     setAdminSession(data.token, data.user);
     bootstrapFirestoreDatabase().catch(() => {});
+    bootstrapRtdbDatabase(getLocalCustomEvents(), getLocalVpnProfiles()).catch(() => {});
     return data;
   } catch {
     return null;
@@ -523,6 +611,29 @@ export async function syncIptvChannels(): Promise<{
 export async function fetchVpnProfiles(): Promise<VpnProfile[]> {
   const local = getLocalVpnProfiles();
   const deletedVpnIds = new Set(getDeletedVpnProfileIds());
+
+  // 1. First priority: Realtime Database cloud truth
+  try {
+    const cloudVpn = await getRtdbVpnProfiles();
+    if (cloudVpn && cloudVpn.length > 0) {
+      const map = new Map<string, VpnProfile>();
+      for (const p of cloudVpn) {
+        if (!deletedVpnIds.has(p.id)) {
+          map.set(p.id, p);
+        }
+      }
+      for (const p of local) {
+        if (!deletedVpnIds.has(p.id)) {
+          map.set(p.id, p);
+        }
+      }
+      return Array.from(map.values());
+    }
+  } catch (err) {
+    console.warn('Realtime Database fetch VPN profiles notice:', err);
+  }
+
+  // 2. Server API fallback
   try {
     const res = await fetch('/api/admin/vpn/profiles', {
       headers: getHeaders(true),
@@ -579,6 +690,7 @@ export async function createVpnProfile(data: Partial<VpnProfile>): Promise<VpnPr
   };
 
   saveLocalVpnProfile(candidate);
+  syncVpnProfileToRtdb(candidate).catch(() => {});
 
   try {
     const res = await fetch('/api/admin/vpn/profiles', {
@@ -589,10 +701,11 @@ export async function createVpnProfile(data: Partial<VpnProfile>): Promise<VpnPr
     if (res.ok) {
       const created: VpnProfile = await res.json();
       saveLocalVpnProfile(created);
+      syncVpnProfileToRtdb(created).catch(() => {});
       return created;
     }
   } catch (err) {
-    console.warn('Server create VPN profile failed, saved locally:', err);
+    console.warn('Server create VPN profile failed, saved locally and to cloud:', err);
   }
   return candidate;
 }
@@ -607,6 +720,7 @@ export async function updateVpnProfile(id: string, data: Partial<VpnProfile>): P
     updatedAt: new Date().toISOString(),
   };
   saveLocalVpnProfile(updatedCandidate);
+  syncVpnProfileToRtdb(updatedCandidate).catch(() => {});
 
   try {
     const res = await fetch(`/api/admin/vpn/profiles/${id}`, {
@@ -617,10 +731,11 @@ export async function updateVpnProfile(id: string, data: Partial<VpnProfile>): P
     if (res.ok) {
       const updated: VpnProfile = await res.json();
       saveLocalVpnProfile(updated);
+      syncVpnProfileToRtdb(updated).catch(() => {});
       return updated;
     }
   } catch (err) {
-    console.warn('Server update VPN profile failed, saved locally:', err);
+    console.warn('Server update VPN profile failed, saved locally and to cloud:', err);
   }
   return updatedCandidate;
 }
@@ -628,6 +743,7 @@ export async function updateVpnProfile(id: string, data: Partial<VpnProfile>): P
 export async function deleteVpnProfile(id: string): Promise<void> {
   markVpnProfileDeleted(id);
   deleteLocalVpnProfile(id);
+  deleteVpnProfileFromRtdb(id).catch(() => {});
   try {
     await fetch(`/api/admin/vpn/profiles/${id}`, {
       method: 'DELETE',

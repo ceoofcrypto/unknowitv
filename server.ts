@@ -1461,12 +1461,31 @@ app.delete('/api/channels/:id', verifyAdmin, (req: Request, res: Response) => {
 });
 
 // Featured Events
-app.get('/api/events', (req: Request, res: Response) => {
+app.get('/api/events', async (req: Request, res: Response) => {
   const isAdmin = isValidAdminRequest(req);
 
-  const baseEvents = isAdmin
+  let baseEvents = isAdmin
     ? db.events
     : db.events.filter((e) => e.isActive && e.isPublished);
+
+  // Sync with Firebase Realtime Database cloud truth if configured
+  const rtdbUrl = process.env.VITE_FIREBASE_DATABASE_URL || process.env.FIREBASE_DATABASE_URL || 'https://t2tvlogin-default-rtdb.asia-southeast1.firebasedatabase.app';
+  if (rtdbUrl) {
+    try {
+      const cloudRes = await fetch(`${rtdbUrl}/events.json`, { signal: AbortSignal.timeout(1800) });
+      if (cloudRes.ok) {
+        const cloudData = await cloudRes.json();
+        if (cloudData && typeof cloudData === 'object') {
+          const cloudList = Object.values(cloudData) as FeaturedEvent[];
+          if (cloudList.length > 0) {
+            baseEvents = isAdmin ? cloudList : cloudList.filter((e) => e.isActive && e.isPublished);
+          }
+        }
+      }
+    } catch {
+      // Fallback cleanly to memory db.events
+    }
+  }
 
   // Enrich events with their assigned Media Source and VPN routing info
   const enrichedEvents = baseEvents.map((ev) => {

@@ -1,12 +1,10 @@
 {
-  "projectId": "",
-  "appId": "",
-  "apiKey": "",
-  "authDomain": "",
+  "projectId": "t2tvlogin",
+  "appId": "1:60303798258:web:42561c9da05ef9c391856b",
+  "apiKey": "AIzaSyCZfar2xtwlllMaHBObfTeCgIpFBZ-P_2g",
+  "authDomain": "t2tvlogin.firebaseapp.com",
+  "databaseURL": "https://t2tvlogin-default-rtdb.asia-southeast1.firebasedatabase.app",
   "firestoreDatabaseId": "(default)",
-  "storageBucket": "",
-  "messagingSenderId": "",
-  "measurementId": "",
-  "oAuthClientId": "",
-  "recaptchaSiteKey": ""
+  "storageBucket": "t2tvlogin.firebasestorage.app",
+  "messagingSenderId": "60303798258"
 }

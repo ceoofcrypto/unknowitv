@@ -8,12 +8,19 @@ import {
   User,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getDatabase } from 'firebase/database';
 import appletFirebaseConfig from '../../firebase-applet-config.json';
 import { isAdminEmailAuthorized } from '../utils/channels.ts';
+
+export const RTDB_URL =
+  import.meta.env.VITE_FIREBASE_DATABASE_URL ||
+  (appletFirebaseConfig as any).databaseURL ||
+  'https://t2tvlogin-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || appletFirebaseConfig.apiKey || '',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || appletFirebaseConfig.authDomain || '',
+  databaseURL: RTDB_URL,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || appletFirebaseConfig.projectId || '',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || appletFirebaseConfig.storageBucket || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || appletFirebaseConfig.messagingSenderId || '',
@@ -30,6 +37,7 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app, FIRESTORE_DATABASE_ID);
+export const rtdb = getDatabase(app, RTDB_URL);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account',
