@@ -505,7 +505,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Admin Top Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-neutral-800">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/logo.png"
+              alt="तपाईंको TV"
+              className="w-8 h-8 rounded-lg object-cover ring-1 ring-white/10 shadow-sm"
+            />
             <h1 className="text-xl font-bold text-white tracking-tight">तपाईंको TV — Control Room</h1>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">
               Admin Session

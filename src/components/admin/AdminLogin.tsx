@@ -60,8 +60,15 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackTo
           <X className="w-4 h-4" />
         </button>
 
-        <div className="w-12 h-12 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-red-500 shadow-inner">
-          <KeyRound className="w-6 h-6" />
+        <div className="relative">
+          <img
+            src="/logo.png"
+            alt="तपाईंको TV"
+            className="w-16 h-16 rounded-2xl object-cover shadow-2xl ring-1 ring-white/10"
+          />
+          <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-neutral-900 border border-neutral-700 flex items-center justify-center text-red-500 shadow">
+            <KeyRound className="w-3.5 h-3.5" />
+          </div>
         </div>
 
         <div className="text-center">

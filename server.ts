@@ -1475,18 +1475,18 @@ app.get('/api/events', (req: Request, res: Response) => {
       ...ev,
       mediaSource: mediaSource
         ? {
-            id: mediaSource.id,
-            title: mediaSource.title,
-            primaryStreamUrl: mediaSource.primaryStreamUrl,
-            streamType: mediaSource.streamType,
-            vpnProfileId: mediaSource.vpnProfileId,
-            forceVpnRoute: mediaSource.forceVpnRoute,
-            backupStreamUrls: mediaSource.backupStreamUrls,
-            isLive: mediaSource.isLive,
-            healthStatus: mediaSource.healthStatus,
-            latencyMs: mediaSource.latencyMs,
-            playbackSettings: mediaSource.playbackSettings,
-          }
+          id: mediaSource.id,
+          title: mediaSource.title,
+          primaryStreamUrl: mediaSource.primaryStreamUrl,
+          streamType: mediaSource.streamType,
+          vpnProfileId: mediaSource.vpnProfileId,
+          forceVpnRoute: mediaSource.forceVpnRoute,
+          backupStreamUrls: mediaSource.backupStreamUrls,
+          isLive: mediaSource.isLive,
+          healthStatus: mediaSource.healthStatus,
+          latencyMs: mediaSource.latencyMs,
+          playbackSettings: mediaSource.playbackSettings,
+        }
         : undefined,
     };
   });
@@ -2372,8 +2372,8 @@ app.post('/api/admin/routing/test-url', verifyAdmin, async (req: Request, res: R
       routedVia === 'vpn'
         ? `Request routed through India VPN Gateway [${vpnProfile?.name || 'India Mumbai'}] with verified India IP (${egressIp}).`
         : routedVia === 'blocked'
-        ? 'Request blocked by administrative policy.'
-        : 'Request routed via standard application interface.',
+          ? 'Request blocked by administrative policy.'
+          : 'Request routed via standard application interface.',
     diagnosticLogs,
   };
 

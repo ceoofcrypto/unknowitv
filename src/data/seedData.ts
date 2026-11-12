@@ -1083,7 +1083,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   appName: 'तपाईंको TV',
   tagline: 'Your Television, Everywhere.',
   nepaliTagline: 'तपाईंको टेलिभिजन, जताततै।',
-  logoUrl: '/favicon.svg',
+  logoUrl: '/logo.png',
   maintenanceMode: false,
   showFeaturedEvent: true,
   defaultTheme: 'dark',

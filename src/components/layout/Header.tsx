@@ -37,9 +37,11 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => handleNav('home')}
           className="flex items-center gap-2.5 text-left group shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center text-white shadow-sm shadow-red-950/60">
-            <Tv className="w-4 h-4" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="तपाईंको TV Icon"
+            className="w-9 h-9 rounded-xl object-cover shadow-md shadow-red-950/40 ring-1 ring-white/10 group-hover:scale-105 transition-transform"
+          />
           <span className="text-lg font-bold tracking-tight text-white group-hover:text-red-400 transition-colors whitespace-nowrap">
             तपाईंको TV
           </span>
