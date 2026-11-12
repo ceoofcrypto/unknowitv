@@ -20,11 +20,120 @@ export function isWebLinkStream(url: string): boolean {
     lower.includes('youtu.be') ||
     lower.includes('twitch.tv') ||
     lower.includes('vimeo.com') ||
-    lower.includes('dailymotion.com')
+    lower.includes('dailymotion.com') ||
+    lower.includes('facebook.com') ||
+    lower.includes('tamashaweb.com') ||
+    lower.includes('crichd') ||
+    lower.includes('streamed') ||
+    !lower.match(/\.(m3u8|mpd|mp4|webm|ts|mkv)(\?.*)?$/)
   ) {
     return true;
   }
   return false;
+}
+
+export interface PlayableStreamResolution {
+  playUrl: string;
+  streamType: StreamType;
+  isEmbed: boolean;
+  requiresProxy?: boolean;
+}
+
+/**
+ * Resolves any custom web link into an autoplay-ready stream or embed player URL.
+ * Automatically transforms YouTube, Vimeo, Twitch, DailyMotion, and web embeds to
+ * their native embeddable counterparts with autoplay enabled.
+ */
+export function resolvePlayableStreamUrl(rawUrl: string): PlayableStreamResolution {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return { playUrl: '', streamType: 'hls', isEmbed: false };
+  }
+
+  const trimmed = rawUrl.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Direct HLS (.m3u8) Streams
+  if (lower.includes('.m3u8')) {
+    return { playUrl: trimmed, streamType: 'hls', isEmbed: false };
+  }
+
+  // 2. Direct MPEG-DASH (.mpd) Streams
+  if (lower.includes('.mpd')) {
+    return { playUrl: trimmed, streamType: 'dash', isEmbed: false };
+  }
+
+  // 3. Direct Video Containers (.mp4, .webm, .ogg)
+  const cleanPath = lower.split('?')[0];
+  if (cleanPath.endsWith('.mp4') || cleanPath.endsWith('.webm') || cleanPath.endsWith('.ogg')) {
+    return { playUrl: trimmed, streamType: 'direct', isEmbed: false };
+  }
+
+  // 4. YouTube Watch / Live / Shorts / Share URLs -> Embed with Autoplay
+  const ytWatchMatch = trimmed.match(/(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  if (ytWatchMatch && ytWatchMatch[1]) {
+    const videoId = ytWatchMatch[1];
+    return {
+      playUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&playsinline=1&controls=1&rel=0`,
+      streamType: 'iframe',
+      isEmbed: true,
+    };
+  }
+  if (lower.includes('youtube.com/embed/')) {
+    const hasQuery = trimmed.includes('?');
+    const autoParam = hasQuery ? '&autoplay=1&mute=0&playsinline=1' : '?autoplay=1&mute=0&playsinline=1';
+    return {
+      playUrl: trimmed.includes('autoplay=') ? trimmed : `${trimmed}${autoParam}`,
+      streamType: 'iframe',
+      isEmbed: true,
+    };
+  }
+
+  // 5. Vimeo URLs -> Embed with Autoplay
+  const vimeoMatch = trimmed.match(/vimeo\.com\/(?:video\/)?([0-9]+)/i);
+  if (vimeoMatch && vimeoMatch[1]) {
+    return {
+      playUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&muted=0`,
+      streamType: 'iframe',
+      isEmbed: true,
+    };
+  }
+
+  // 6. DailyMotion URLs -> Embed with Autoplay
+  const dmMatch = trimmed.match(/dailymotion\.com\/(?:video\/|embed\/video\/)([a-zA-Z0-9]+)/i);
+  if (dmMatch && dmMatch[1]) {
+    return {
+      playUrl: `https://www.dailymotion.com/embed/video/${dmMatch[1]}?autoplay=1`,
+      streamType: 'iframe',
+      isEmbed: true,
+    };
+  }
+
+  // 7. Twitch Stream URLs -> Player with Autoplay
+  const twitchMatch = trimmed.match(/twitch\.tv\/([a-zA-Z0-9_]+)/i);
+  if (twitchMatch && twitchMatch[1]) {
+    const channel = twitchMatch[1];
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    return {
+      playUrl: `https://player.twitch.tv/?channel=${channel}&parent=${host}&autoplay=true&muted=false`,
+      streamType: 'iframe',
+      isEmbed: true,
+    };
+  }
+
+  // 8. General Web Stream Links (pages.dev, crichd, sportlink, custom embeds)
+  // Ensure autoplay=1 is present in the URL query string
+  let finalEmbedUrl = trimmed;
+  if (!finalEmbedUrl.includes('autoplay=')) {
+    finalEmbedUrl = finalEmbedUrl.includes('?')
+      ? `${finalEmbedUrl}&autoplay=1`
+      : `${finalEmbedUrl}?autoplay=1`;
+  }
+
+  return {
+    playUrl: finalEmbedUrl,
+    streamType: 'iframe',
+    isEmbed: true,
+  };
 }
 
 /**

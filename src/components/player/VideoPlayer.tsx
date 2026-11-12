@@ -7,9 +7,10 @@ import {
   calculateBackoffDelay,
   getProxiedStreamUrl,
   shouldPreferStreamProxy,
+  resolvePlayableStreamUrl,
 } from '../../utils/streaming.ts';
 import { sanitizeLogoUrl, getChannelMonogram } from '../../utils/channels.ts';
-import { reportBrokenChannel } from '../../services/api.ts';
+import { reportBrokenChannel, detectMediaFromWebUrl } from '../../services/api.ts';
 import {
   Play,
   Pause,
@@ -93,8 +94,35 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ? backupStreamUrls[activeBackupIndex]
       : streamUrlOverride || channel.streamUrl;
 
-  const effectiveStreamUrl = rawStreamUrl;
-  const streamFormat = detectStreamType(effectiveStreamUrl);
+  const resolvedInitial = resolvePlayableStreamUrl(rawStreamUrl);
+  const [detectedStream, setDetectedStream] = useState<{ url: string; format: string } | null>(null);
+
+  // Auto-detect underlying stream from web links if available
+  useEffect(() => {
+    setDetectedStream(null);
+    const resolved = resolvePlayableStreamUrl(rawStreamUrl);
+
+    // If it is an external web link (not a standard YouTube/Vimeo embed), try sniffing for native video/HLS stream
+    if (
+      resolved.streamType === 'iframe' &&
+      !rawStreamUrl.includes('youtube.com') &&
+      !rawStreamUrl.includes('youtu.be') &&
+      !rawStreamUrl.includes('vimeo.com') &&
+      !rawStreamUrl.includes('twitch.tv')
+    ) {
+      detectMediaFromWebUrl(rawStreamUrl).then((result) => {
+        if (result && result.detected && result.streamUrl && result.streamType !== 'iframe') {
+          setDetectedStream({
+            url: result.streamUrl,
+            format: result.streamType,
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [rawStreamUrl]);
+
+  const effectiveStreamUrl = detectedStream?.url || resolvedInitial.playUrl;
+  const streamFormat = detectedStream?.format || resolvedInitial.streamType;
   const cleanLogo = sanitizeLogoUrl(channel.logoUrl);
   const { initials, paletteClass } = getChannelMonogram(channel.name);
 
@@ -193,6 +221,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       // For external web links and iframe embed players, bypass native video tag and hls.js
       if (streamFormat === 'iframe' || streamFormat === 'web_link') {
         setIsLoading(false);
+        setIsPlaying(true);
         setErrorDetails(null);
         return;
       }
@@ -483,10 +512,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <iframe
               src={effectiveStreamUrl}
               title={eventName || channel.name}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
               allowFullScreen
+              referrerPolicy="no-referrer-when-downgrade"
               className="w-full h-full border-0"
-              onLoad={() => setIsLoading(false)}
+              onLoad={() => {
+                setIsLoading(false);
+                setIsPlaying(true);
+              }}
             />
             {/* Floating Banner for Web Stream Link */}
             <div className="absolute top-3 left-3 z-30 flex items-center gap-2">

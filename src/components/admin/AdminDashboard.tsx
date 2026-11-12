@@ -27,6 +27,7 @@ import {
   fetchEventMediaSources,
   createEventMediaSource,
   updateEventMediaSource,
+  detectMediaFromWebUrl,
 } from '../../services/api.ts';
 import { VpnGatewayManager } from './VpnGatewayManager.tsx';
 import { RoutingRulesManager } from './RoutingRulesManager.tsx';
@@ -136,6 +137,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [eventBackupUrls, setEventBackupUrls] = useState<string[]>(['']);
   const [eventCustomChannel, setEventCustomChannel] = useState('');
   const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
+  const [isDetectingEventMedia, setIsDetectingEventMedia] = useState(false);
+  const [detectedMediaNotice, setDetectedMediaNotice] = useState<string | null>(null);
 
   // In-App Confirmation Modals (Replacing blocked window.confirm)
   const [eventToDelete, setEventToDelete] = useState<{ id: string; title: string } | null>(null);
@@ -248,6 +251,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEventForceVpn(true);
     setEventBackupUrls(['']);
     setEventCustomChannel('Live Sports Feed');
+    setDetectedMediaNotice(null);
     setEventModalOpen(true);
   };
 
@@ -261,7 +265,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setEventForceVpn(linkedMedia?.forceVpnRoute ?? true);
     setEventBackupUrls(linkedMedia?.backupStreamUrls?.length ? [...linkedMedia.backupStreamUrls] : ['']);
     setEventCustomChannel(ev.channelName || '');
+    setDetectedMediaNotice(null);
     setEventModalOpen(true);
+  };
+
+  const handleDetectEventMedia = async () => {
+    const url = eventStreamUrl.trim();
+    if (!url) {
+      showError('Please enter a stream or web link first');
+      return;
+    }
+    setIsDetectingEventMedia(true);
+    setDetectedMediaNotice(null);
+    try {
+      const result = await detectMediaFromWebUrl(url);
+      if (result && result.detected) {
+        if (result.streamType) {
+          setEventStreamType(result.streamType as StreamType);
+        }
+        if (result.streamUrl && result.streamUrl !== url) {
+          setEventStreamUrl(result.streamUrl);
+        }
+        setDetectedMediaNotice(result.details || `Successfully detected ${result.streamType.toUpperCase()} stream!`);
+        showSuccess(result.details || 'Detected video stream successfully');
+      } else {
+        const fallback = detectStreamType(url);
+        setEventStreamType(fallback);
+        setDetectedMediaNotice(`Detected stream format: ${fallback.toUpperCase()}`);
+      }
+    } catch {
+      const fallback = detectStreamType(url);
+      setEventStreamType(fallback);
+    } finally {
+      setIsDetectingEventMedia(false);
+    }
   };
 
   const handleSaveEvent = async (e: React.FormEvent) => {
@@ -1444,12 +1481,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <Radio className="w-3.5 h-3.5 text-red-500" />
                       <span>Stream URL or Web Link</span>
                     </label>
-                    {isWebLinkStream(eventStreamUrl) && (
-                      <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1">
-                        <Globe className="w-3 h-3" />
-                        <span>Web Player Link Detected</span>
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {isWebLinkStream(eventStreamUrl) && (
+                        <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1">
+                          <Globe className="w-3 h-3" />
+                          <span>Web Player</span>
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleDetectEventMedia}
+                        disabled={isDetectingEventMedia || !eventStreamUrl.trim()}
+                        className="px-2.5 py-1 rounded-md bg-red-600/90 hover:bg-red-600 disabled:opacity-40 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Auto-detect underlying video streams or player embed"
+                      >
+                        {isDetectingEventMedia ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Radio className="w-3 h-3" />
+                        )}
+                        <span>{isDetectingEventMedia ? 'Detecting...' : 'Detect Stream'}</span>
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="url"
@@ -1459,12 +1512,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setEventStreamUrl(val);
                       setEventStreamType(detectStreamType(val));
                     }}
+                    onBlur={() => {
+                      if (eventStreamUrl.trim() && !detectedMediaNotice) {
+                        handleDetectEventMedia();
+                      }
+                    }}
                     placeholder="e.g. https://sportlink-fancode10.pages.dev/ios?id=4250374 or https://.../master.m3u8"
                     className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2.5 text-white font-mono placeholder-neutral-500 focus:outline-none focus:border-red-500"
                   />
-                  <p className="text-[11px] text-neutral-400 mt-1">
-                    Paste an HLS (.m3u8) stream, direct MP4, or an external web embed player link (e.g. Cloudflare Pages, FanCode, SportLink).
-                  </p>
+                  {detectedMediaNotice ? (
+                    <div className="mt-1.5 p-2 rounded-lg bg-emerald-950/60 border border-emerald-800/70 text-emerald-300 text-[11px] flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                      <span>{detectedMediaNotice}</span>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-neutral-400 mt-1">
+                      Paste an HLS (.m3u8) stream, YouTube, direct MP4, or an external web embed player link (e.g. Cloudflare Pages, FanCode, SportLink). Click "Detect Stream" to auto-sniff.
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">

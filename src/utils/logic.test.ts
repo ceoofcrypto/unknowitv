@@ -6,6 +6,7 @@ import {
   isValidStreamUrl,
   isWebLinkStream,
   shouldPreferStreamProxy,
+  resolvePlayableStreamUrl,
 } from './streaming.ts';
 import { getEligibleFeaturedEvents, getPrimaryFeaturedEvent } from './events.ts';
 import {
@@ -32,6 +33,32 @@ test('isWebLinkStream correctly identifies external web player pages', () => {
   assert.equal(isWebLinkStream('https://www.youtube.com/embed/live_stream?channel=xyz'), true);
   assert.equal(isWebLinkStream('https://test.com/stream.m3u8'), false);
   assert.equal(isWebLinkStream('https://test.com/video.mp4'), false);
+});
+
+test('resolvePlayableStreamUrl converts YouTube watch/live links to embed with autoplay and preserves direct streams', () => {
+  // YouTube watch link
+  const ytWatch = resolvePlayableStreamUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(ytWatch.streamType, 'iframe');
+  assert.equal(ytWatch.isEmbed, true);
+  assert.ok(ytWatch.playUrl.includes('youtube.com/embed/dQw4w9WgXcQ'));
+  assert.ok(ytWatch.playUrl.includes('autoplay=1'));
+
+  // YouTube live link
+  const ytLive = resolvePlayableStreamUrl('https://www.youtube.com/live/dQw4w9WgXcQ');
+  assert.equal(ytLive.streamType, 'iframe');
+  assert.ok(ytLive.playUrl.includes('youtube.com/embed/dQw4w9WgXcQ'));
+
+  // Direct HLS stream
+  const hls = resolvePlayableStreamUrl('https://stream.server.com/live/playlist.m3u8');
+  assert.equal(hls.streamType, 'hls');
+  assert.equal(hls.isEmbed, false);
+  assert.equal(hls.playUrl, 'https://stream.server.com/live/playlist.m3u8');
+
+  // Generic web player link
+  const webLink = resolvePlayableStreamUrl('https://sportlink-fancode10.pages.dev/ios?id=4250374');
+  assert.equal(webLink.streamType, 'iframe');
+  assert.equal(webLink.isEmbed, true);
+  assert.ok(webLink.playUrl.includes('autoplay=1'));
 });
 
 test('calculateBackoffDelay respects exponential backoff and max cap', () => {

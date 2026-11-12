@@ -124,11 +124,13 @@ function sanitizeChannelList(channels: Channel[]): Channel[] {
 }
 
 const INITIAL_EVENT_MEDIA: EventMediaSource[] = [];
+const TMP_DB_FILE = path.join('/tmp', 'db.json');
 
 function loadDatabase(): DatabaseState {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+    const candidateFile = fs.existsSync(TMP_DB_FILE) ? TMP_DB_FILE : DB_FILE;
+    if (fs.existsSync(candidateFile)) {
+      const raw = fs.readFileSync(candidateFile, 'utf-8');
       const parsed = JSON.parse(raw);
 
       if (parsed.schemaVersion === CURRENT_DB_SCHEMA_VERSION) {
@@ -149,10 +151,14 @@ function loadDatabase(): DatabaseState {
           ? parsed.eventMediaSources
           : [];
 
+        const rawEvents = (Array.isArray(parsed.events) && parsed.events.length > 0)
+          ? parsed.events
+          : INITIAL_EVENTS;
+
         const sanitizedState: DatabaseState = {
           schemaVersion: CURRENT_DB_SCHEMA_VERSION,
           channels: sanitizeChannelList(mergedChannels),
-          events: sanitizeEvents(parsed.events || INITIAL_EVENTS),
+          events: sanitizeEvents(rawEvents),
           categories: parsed.categories || INITIAL_CATEGORIES,
           announcements: parsed.announcements || INITIAL_ANNOUNCEMENTS,
           settings: parsed.settings || INITIAL_SETTINGS,
@@ -184,11 +190,26 @@ function loadDatabase(): DatabaseState {
 }
 
 function saveDatabase(state: DatabaseState): void {
+  state.schemaVersion = CURRENT_DB_SCHEMA_VERSION;
+  const jsonStr = JSON.stringify(state, null, 2);
+  let saved = false;
+
   try {
-    state.schemaVersion = CURRENT_DB_SCHEMA_VERSION;
-    fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving db.json:', err);
+    fs.writeFileSync(DB_FILE, jsonStr, 'utf-8');
+    saved = true;
+  } catch {
+    // EROFS on serverless environment (e.g. Vercel)
+  }
+
+  try {
+    fs.writeFileSync(TMP_DB_FILE, jsonStr, 'utf-8');
+    saved = true;
+  } catch {
+    // TMP might not exist on Windows if /tmp is not mapped
+  }
+
+  if (!saved) {
+    console.warn('Could not persist database to disk (read-only environment); state kept in memory.');
   }
 }
 
@@ -1424,8 +1445,8 @@ app.get('/api/events', (req: Request, res: Response) => {
 
 app.post('/api/events', verifyAdmin, (req: Request, res: Response) => {
   const body = req.body;
-  if (!body.title || !body.channelId) {
-    return res.status(400).json({ error: 'Event title and target channel ID are required' });
+  if (!body.title || !body.title.trim()) {
+    return res.status(400).json({ error: 'Event title is required' });
   }
 
   const id = body.id || 'event-' + Date.now().toString(36);
@@ -1437,10 +1458,10 @@ app.post('/api/events', verifyAdmin, (req: Request, res: Response) => {
     description: body.description?.trim() || '',
     thumbnailUrl: body.thumbnailUrl?.trim() || '/images/event_nsl_stadium.jpg',
     bannerUrl: body.bannerUrl?.trim() || '/images/event_nsl_stadium.jpg',
-    channelId: body.channelId,
-    channelName: body.channelName || '',
+    channelId: body.channelId || 'custom-stream',
+    channelName: body.channelName || 'Live Event',
     streamUrlOverride: body.streamUrlOverride?.trim() || null,
-    status: body.status || 'UPCOMING',
+    status: body.status || 'LIVE',
     startTime: body.startTime || new Date().toISOString(),
     endTime: body.endTime || null,
     priority: Number(body.priority) || 1,
@@ -1648,6 +1669,154 @@ app.post('/api/admin/stream-test', verifyAdmin, async (req: Request, res: Respon
       contentType: 'error',
       details: `Network test failed: ${errorMsg}.`,
     });
+  }
+});
+
+// Automatic Stream & Video Media Detector
+app.get('/api/stream/detect-media', async (req: Request, res: Response) => {
+  const rawUrl = (req.query.url as string || '').trim();
+  if (!rawUrl) {
+    return res.status(400).json({ error: 'url query parameter is required' });
+  }
+
+  try {
+    const lower = rawUrl.toLowerCase();
+
+    // 1. YouTube Watch / Live / Shorts
+    const ytMatch = rawUrl.match(/(?:youtube\.com\/(?:watch\?v=|live\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+    if (ytMatch && ytMatch[1]) {
+      return res.json({
+        detected: true,
+        streamType: 'iframe',
+        isEmbed: true,
+        streamUrl: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&mute=0&playsinline=1&controls=1&rel=0`,
+        source: 'youtube',
+        details: 'YouTube stream detected and converted to auto-playing embed.',
+      });
+    }
+
+    // 2. Direct HLS
+    if (lower.includes('.m3u8')) {
+      return res.json({
+        detected: true,
+        streamType: 'hls',
+        isEmbed: false,
+        streamUrl: rawUrl,
+        source: 'direct_hls',
+        details: 'Direct HLS (.m3u8) video playlist stream detected.',
+      });
+    }
+
+    // 3. Direct MPEG-DASH
+    if (lower.includes('.mpd')) {
+      return res.json({
+        detected: true,
+        streamType: 'dash',
+        isEmbed: false,
+        streamUrl: rawUrl,
+        source: 'direct_dash',
+        details: 'MPEG-DASH (.mpd) stream detected.',
+      });
+    }
+
+    // 4. Direct video container (.mp4, .webm, .ogg)
+    const cleanUrlPath = lower.split('?')[0];
+    if (cleanUrlPath.endsWith('.mp4') || cleanUrlPath.endsWith('.webm') || cleanUrlPath.endsWith('.ogg')) {
+      return res.json({
+        detected: true,
+        streamType: 'direct',
+        isEmbed: false,
+        streamUrl: rawUrl,
+        source: 'direct_video',
+        details: 'Direct HTML5 video container file detected.',
+      });
+    }
+
+    // 5. Sniff webpage content for embedded streams (.m3u8, video tags, or iframes)
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4500);
+
+      const pageRes = await fetch(rawUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      clearTimeout(timeout);
+
+      if (pageRes.ok) {
+        const html = await pageRes.text();
+
+        // Check for HLS .m3u8 URL embedded in JS or tags
+        const m3u8Match = html.match(/(https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*)/i);
+        if (m3u8Match && m3u8Match[1]) {
+          const detectedM3u8 = m3u8Match[1].replace(/\\/g, '');
+          return res.json({
+            detected: true,
+            streamType: 'hls',
+            isEmbed: false,
+            streamUrl: detectedM3u8,
+            source: 'page_sniffed_m3u8',
+            details: 'Underlying HLS live stream manifest successfully detected inside the webpage.',
+          });
+        }
+
+        // Check for MP4 video URL
+        const mp4Match = html.match(/(https?:\/\/[^"'\s<>]+\.mp4[^"'\s<>]*)/i);
+        if (mp4Match && mp4Match[1]) {
+          const detectedMp4 = mp4Match[1].replace(/\\/g, '');
+          return res.json({
+            detected: true,
+            streamType: 'direct',
+            isEmbed: false,
+            streamUrl: detectedMp4,
+            source: 'page_sniffed_mp4',
+            details: 'Direct MP4 video stream detected inside the webpage.',
+          });
+        }
+
+        // Check for embedded iframe player
+        const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+        if (iframeMatch && iframeMatch[1]) {
+          let embed = iframeMatch[1];
+          if (embed.startsWith('//')) embed = 'https:' + embed;
+          if (!embed.includes('autoplay=')) {
+            embed += embed.includes('?') ? '&autoplay=1' : '?autoplay=1';
+          }
+          return res.json({
+            detected: true,
+            streamType: 'iframe',
+            isEmbed: true,
+            streamUrl: embed,
+            source: 'page_sniffed_iframe',
+            details: 'Embedded player iframe detected inside webpage.',
+          });
+        }
+      }
+    } catch {
+      // Sniff fetch timed out or failed, fall back to auto-playing web embed
+    }
+
+    // Default: format as iframe player with autoplay parameter
+    let finalUrl = rawUrl;
+    if (!finalUrl.includes('autoplay=')) {
+      finalUrl += finalUrl.includes('?') ? '&autoplay=1' : '?autoplay=1';
+    }
+
+    return res.json({
+      detected: true,
+      streamType: 'iframe',
+      isEmbed: true,
+      streamUrl: finalUrl,
+      source: 'web_link',
+      details: 'Configured as web link stream with autoplay enabled.',
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: `Detection failed: ${errorMsg}` });
   }
 });
 

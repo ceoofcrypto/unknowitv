@@ -260,13 +260,38 @@ export default function App() {
   }, []);
 
   const handleWatchFeaturedEvent = (event: FeaturedEvent) => {
-    const targetChannel = channels.find((c) => c.id === event.channelId && c.isActive);
     const mediaSource = (event as any).mediaSource;
     const streamUrl = mediaSource?.primaryStreamUrl || event.streamUrlOverride;
+    const targetChannel = channels.find((c) => c.id === event.channelId && c.isActive);
+
     if (targetChannel) {
       handleSelectChannel(targetChannel, streamUrl, mediaSource);
-    } else if (channels.length > 0) {
-      handleSelectChannel(channels[0], streamUrl, mediaSource);
+    } else {
+      // Build a dedicated custom channel representation for the event so it plays anywhere
+      const customEventChannel: Channel = {
+        id: event.id || 'custom-main-event',
+        name: event.title || event.channelName || 'Live Event Broadcast',
+        nepaliName: event.nepaliTitle || '',
+        logoUrl: event.thumbnailUrl || event.bannerUrl || '',
+        streamUrl: streamUrl || '',
+        streamType: (mediaSource?.streamType || 'hls') as any,
+        categoryId: 'sports',
+        categoryName: 'Live Event',
+        country: 'Global',
+        countryCode: 'NP',
+        language: 'Nepali / International',
+        description: event.description || event.subtitle || '',
+        isActive: true,
+        isPublished: true,
+        isFeatured: true,
+        priority: 1,
+        sourceType: 'manual',
+        verificationStatus: 'verified',
+        lastVerifiedAt: new Date().toISOString(),
+        createdAt: event.createdAt || new Date().toISOString(),
+        updatedAt: event.updatedAt || new Date().toISOString(),
+      };
+      handleSelectChannel(customEventChannel, streamUrl, mediaSource);
     }
   };
 
