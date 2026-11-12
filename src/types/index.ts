@@ -73,6 +73,7 @@ export interface Category {
 
 export type AnnouncementType = 'info' | 'warning' | 'live' | 'success';
 export type AnnouncementDisplayLocation = 'banner' | 'toast' | 'both';
+export type AnnouncementActionType = 'okay' | 'visit' | 'download' | 'custom';
 
 export interface Announcement {
   id: string;
@@ -81,6 +82,10 @@ export interface Announcement {
   nepaliMessage?: string;
   type?: AnnouncementType;
   displayLocation?: AnnouncementDisplayLocation;
+  actionType?: AnnouncementActionType;
+  actionLabel?: string;
+  actionUrl?: string;
+  imageUrl?: string;
   isActive: boolean;
   isPublished: boolean;
   startTime?: string | null;

@@ -6,6 +6,7 @@ import {
   Announcement,
   AnnouncementType,
   AnnouncementDisplayLocation,
+  AnnouncementActionType,
   AppSettings,
   AdminUser,
   VpnProfile,
@@ -1225,6 +1226,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   nepaliMessage: '',
                   type: 'info',
                   displayLocation: 'both',
+                  actionType: 'okay',
+                  actionLabel: 'Okay, Got It',
+                  actionUrl: '',
+                  imageUrl: '',
                   isActive: true,
                   isPublished: true,
                   displayOrder: announcements.length + 1,
@@ -1262,8 +1267,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {ann.type === 'live' ? '🔴 Live Alert' : ann.type === 'warning' ? '⚠️ Warning' : ann.type === 'success' ? '✨ Special' : '📢 Notice'}
                         </span>
                         <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300">
-                          {ann.displayLocation === 'toast' ? 'Homepage Toast Only' : ann.displayLocation === 'banner' ? 'Top Banner Only' : 'Banner & Toast'}
+                          {ann.displayLocation === 'toast' ? 'Center Popup Only' : ann.displayLocation === 'banner' ? 'Top Banner Only' : 'Banner & Center Popup'}
                         </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300">
+                          {ann.actionType === 'download'
+                            ? `📥 Download (${ann.actionLabel || 'Download'})`
+                            : ann.actionType === 'visit'
+                            ? `🔗 Visit (${ann.actionLabel || 'Visit'})`
+                            : ann.actionType === 'custom'
+                            ? `⚡ ${ann.actionLabel || 'Action'}`
+                            : '✓ Okay Button'}
+                        </span>
+                        {ann.imageUrl && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800">
+                            🖼️ Image Postcard
+                          </span>
+                        )}
                         <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${ann.isActive && ann.isPublished ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-neutral-800 text-neutral-400'}`}>
                           {ann.isActive && ann.isPublished ? 'ACTIVE' : 'DRAFT'}
                         </span>
@@ -2055,10 +2074,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, displayLocation: e.target.value as AnnouncementDisplayLocation })}
                     className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white"
                   >
-                    <option value="toast">Homepage Floating Toast Message</option>
+                    <option value="toast">Center Screen Popup / Postcard Card (Main Message)</option>
                     <option value="banner">Top Notice Banner Only</option>
-                    <option value="both">Both (Banner & Toast)</option>
+                    <option value="both">Both (Banner & Center Popup)</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Popup Card Action Button Configuration */}
+              <div className="p-3.5 rounded-xl bg-neutral-900/60 border border-neutral-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-neutral-300 mb-1 font-medium">Main Action Button</label>
+                    <select
+                      value={editingAnnouncement.actionType || 'okay'}
+                      onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, actionType: e.target.value as AnnouncementActionType })}
+                      className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white"
+                    >
+                      <option value="okay">✓ "Okay / Got it" Button (Dismiss modal)</option>
+                      <option value="visit">🔗 "Visit Link" Button (Open website/channel)</option>
+                      <option value="download">📥 "Download" Button (Download APK/App/File)</option>
+                      <option value="custom">⚡ Custom Action Button</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-300 mb-1 font-medium">Button Text Label (Optional)</label>
+                    <input
+                      type="text"
+                      value={editingAnnouncement.actionLabel || ''}
+                      onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, actionLabel: e.target.value })}
+                      placeholder={
+                        editingAnnouncement.actionType === 'download'
+                          ? 'e.g. Download Android App'
+                          : editingAnnouncement.actionType === 'visit'
+                          ? 'e.g. Join Official Telegram'
+                          : editingAnnouncement.actionType === 'custom'
+                          ? 'e.g. Watch Match Live'
+                          : 'e.g. Okay, Got It'
+                      }
+                      className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+                </div>
+
+                {editingAnnouncement.actionType && editingAnnouncement.actionType !== 'okay' && (
+                  <div>
+                    <label className="block text-neutral-300 mb-1 font-medium">Destination Link / URL *</label>
+                    <input
+                      type="url"
+                      value={editingAnnouncement.actionUrl || ''}
+                      onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, actionUrl: e.target.value })}
+                      placeholder="e.g. https://t.me/tapaikotv or https://example.com/app.apk"
+                      className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white font-mono text-xs focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-neutral-300 mb-1 font-medium">Postcard Image / Banner URL (Optional)</label>
+                  <input
+                    type="url"
+                    value={editingAnnouncement.imageUrl || ''}
+                    onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, imageUrl: e.target.value })}
+                    placeholder="e.g. https://... or /images/banner.jpg"
+                    className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white font-mono text-xs focus:outline-none focus:border-red-500"
+                  />
+                  {editingAnnouncement.imageUrl && (
+                    <div className="mt-2 w-full h-28 rounded-xl overflow-hidden border border-neutral-800 bg-black">
+                      <img
+                        src={editingAnnouncement.imageUrl}
+                        alt="Postcard Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
