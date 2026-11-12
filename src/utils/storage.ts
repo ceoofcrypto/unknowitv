@@ -6,6 +6,9 @@ const THEME_KEY = 'tapaiko_tv_theme';
 const CUSTOM_EVENTS_KEY = 'tapaiko_tv_custom_events';
 const VPN_PROFILES_KEY = 'tapaiko_tv_vpn_profiles';
 const EVENT_MEDIA_KEY = 'tapaiko_tv_event_media_sources';
+const DELETED_VPN_PROFILES_KEY = 'tapaiko_tv_deleted_vpn_profiles';
+const DELETED_EVENTS_KEY = 'tapaiko_tv_deleted_events';
+const DELETED_EVENT_MEDIA_KEY = 'tapaiko_tv_deleted_event_media';
 const MAX_RECENT_CHANNELS = 10;
 
 export function getLocalFavorites(): string[] {
@@ -91,9 +94,9 @@ export function saveTheme(theme: 'dark' | 'light'): void {
 
 // ---------------- CUSTOM EVENTS PERSISTENCE ----------------
 
-export function getLocalCustomEvents(): FeaturedEvent[] {
+export function getDeletedEventIds(): string[] {
   try {
-    const raw = localStorage.getItem(CUSTOM_EVENTS_KEY);
+    const raw = localStorage.getItem(DELETED_EVENTS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -102,8 +105,44 @@ export function getLocalCustomEvents(): FeaturedEvent[] {
   }
 }
 
+export function markEventDeleted(id: string): void {
+  try {
+    const current = getDeletedEventIds();
+    if (!current.includes(id)) {
+      localStorage.setItem(DELETED_EVENTS_KEY, JSON.stringify([...current, id]));
+    }
+  } catch (err) {
+    console.warn('Failed to mark event deleted:', err);
+  }
+}
+
+export function unmarkEventDeleted(id: string): void {
+  try {
+    const current = getDeletedEventIds();
+    localStorage.setItem(
+      DELETED_EVENTS_KEY,
+      JSON.stringify(current.filter((item) => item !== id))
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export function getLocalCustomEvents(): FeaturedEvent[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_EVENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const deleted = new Set(getDeletedEventIds());
+    return Array.isArray(parsed) ? parsed.filter((e) => !deleted.has(e.id)) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function saveLocalCustomEvent(event: FeaturedEvent): void {
   try {
+    unmarkEventDeleted(event.id);
     const current = getLocalCustomEvents();
     const index = current.findIndex((e) => e.id === event.id);
     let updated: FeaturedEvent[];
@@ -121,6 +160,7 @@ export function saveLocalCustomEvent(event: FeaturedEvent): void {
 
 export function deleteLocalCustomEvent(id: string): void {
   try {
+    markEventDeleted(id);
     const current = getLocalCustomEvents();
     const updated = current.filter((e) => e.id !== id);
     localStorage.setItem(CUSTOM_EVENTS_KEY, JSON.stringify(updated));
@@ -131,9 +171,9 @@ export function deleteLocalCustomEvent(id: string): void {
 
 // ---------------- VPN PROFILES PERSISTENCE ----------------
 
-export function getLocalVpnProfiles(): VpnProfile[] {
+export function getDeletedVpnProfileIds(): string[] {
   try {
-    const raw = localStorage.getItem(VPN_PROFILES_KEY);
+    const raw = localStorage.getItem(DELETED_VPN_PROFILES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -142,8 +182,44 @@ export function getLocalVpnProfiles(): VpnProfile[] {
   }
 }
 
+export function markVpnProfileDeleted(id: string): void {
+  try {
+    const current = getDeletedVpnProfileIds();
+    if (!current.includes(id)) {
+      localStorage.setItem(DELETED_VPN_PROFILES_KEY, JSON.stringify([...current, id]));
+    }
+  } catch (err) {
+    console.warn('Failed to mark VPN profile deleted:', err);
+  }
+}
+
+export function unmarkVpnProfileDeleted(id: string): void {
+  try {
+    const current = getDeletedVpnProfileIds();
+    localStorage.setItem(
+      DELETED_VPN_PROFILES_KEY,
+      JSON.stringify(current.filter((item) => item !== id))
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export function getLocalVpnProfiles(): VpnProfile[] {
+  try {
+    const raw = localStorage.getItem(VPN_PROFILES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const deleted = new Set(getDeletedVpnProfileIds());
+    return Array.isArray(parsed) ? parsed.filter((p) => !deleted.has(p.id)) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function saveLocalVpnProfile(profile: VpnProfile): void {
   try {
+    unmarkVpnProfileDeleted(profile.id);
     const current = getLocalVpnProfiles();
     const index = current.findIndex((p) => p.id === profile.id);
     let updated: VpnProfile[];
@@ -161,6 +237,7 @@ export function saveLocalVpnProfile(profile: VpnProfile): void {
 
 export function deleteLocalVpnProfile(id: string): void {
   try {
+    markVpnProfileDeleted(id);
     const current = getLocalVpnProfiles();
     const updated = current.filter((p) => p.id !== id);
     localStorage.setItem(VPN_PROFILES_KEY, JSON.stringify(updated));
@@ -171,9 +248,9 @@ export function deleteLocalVpnProfile(id: string): void {
 
 // ---------------- EVENT MEDIA SOURCES PERSISTENCE ----------------
 
-export function getLocalEventMediaSources(): EventMediaSource[] {
+export function getDeletedEventMediaIds(): string[] {
   try {
-    const raw = localStorage.getItem(EVENT_MEDIA_KEY);
+    const raw = localStorage.getItem(DELETED_EVENT_MEDIA_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -182,8 +259,45 @@ export function getLocalEventMediaSources(): EventMediaSource[] {
   }
 }
 
+export function markEventMediaDeleted(id: string): void {
+  try {
+    const current = getDeletedEventMediaIds();
+    if (!current.includes(id)) {
+      localStorage.setItem(DELETED_EVENT_MEDIA_KEY, JSON.stringify([...current, id]));
+    }
+  } catch (err) {
+    console.warn('Failed to mark event media deleted:', err);
+  }
+}
+
+export function unmarkEventMediaDeleted(id: string): void {
+  try {
+    const current = getDeletedEventMediaIds();
+    localStorage.setItem(
+      DELETED_EVENT_MEDIA_KEY,
+      JSON.stringify(current.filter((item) => item !== id))
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export function getLocalEventMediaSources(): EventMediaSource[] {
+  try {
+    const raw = localStorage.getItem(EVENT_MEDIA_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const deleted = new Set(getDeletedEventMediaIds());
+    return Array.isArray(parsed) ? parsed.filter((s) => !deleted.has(s.id) && (!s.eventId || !deleted.has(s.eventId))) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function saveLocalEventMediaSource(source: EventMediaSource): void {
   try {
+    unmarkEventMediaDeleted(source.id);
+    if (source.eventId) unmarkEventMediaDeleted(source.eventId);
     const current = getLocalEventMediaSources();
     const index = current.findIndex((s) => s.id === source.id || (s.eventId && s.eventId === source.eventId));
     let updated: EventMediaSource[];
@@ -201,6 +315,7 @@ export function saveLocalEventMediaSource(source: EventMediaSource): void {
 
 export function deleteLocalEventMediaSource(id: string): void {
   try {
+    markEventMediaDeleted(id);
     const current = getLocalEventMediaSources();
     const updated = current.filter((s) => s.id !== id && s.eventId !== id);
     localStorage.setItem(EVENT_MEDIA_KEY, JSON.stringify(updated));

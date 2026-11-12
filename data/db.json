@@ -89029,36 +89029,7 @@
     "defaultTheme": "dark",
     "updatedAt": "2026-11-10T15:10:54.273Z"
   },
-  "vpnProfiles": [
-    {
-      "id": "vpn-profile-mumbai-1",
-      "name": "India Gateway (Mumbai)",
-      "serverAddress": "103.189.24.12",
-      "port": 1194,
-      "proto": "udp",
-      "cipher": "AES-256-GCM",
-      "authType": "credentials",
-      "credentials": {
-        "username": "openvpn_user",
-        "password": "vault_secret_token"
-      },
-      "region": "India (IN)",
-      "countryCode": "IN",
-      "city": "Mumbai",
-      "egressIp": "103.189.24.12",
-      "isIndiaVerified": true,
-      "status": "connected",
-      "lastHealthCheck": "2026-11-12T09:20:55.339Z",
-      "latencyMs": 38,
-      "bytesTransferredIn": 2457600,
-      "bytesTransferredOut": 8912400,
-      "isActive": true,
-      "isDefault": true,
-      "interfaceName": "tun0",
-      "createdAt": "2026-11-12T09:20:55.339Z",
-      "updatedAt": "2026-11-12T09:20:55.339Z"
-    }
-  ],
+  "vpnProfiles": [],
   "routingRules": [],
   "eventMediaSources": []
 }

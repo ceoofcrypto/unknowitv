@@ -18,6 +18,14 @@ import {
 import { FeaturedEvent, Channel, Country } from '../types/index.ts';
 import { groupCountriesAlphabetically, searchCountries } from './countryHelpers.ts';
 import { isDebuggerShortcut } from './security.ts';
+import {
+  markVpnProfileDeleted,
+  unmarkVpnProfileDeleted,
+  getDeletedVpnProfileIds,
+  markEventDeleted,
+  unmarkEventDeleted,
+  getDeletedEventIds,
+} from './storage.ts';
 
 test('detectStreamType identifies HLS, DASH, direct formats, and web embed links', () => {
   assert.equal(detectStreamType('https://live.example.com/playlist.m3u8'), 'hls');
@@ -474,6 +482,29 @@ test('shouldPreferStreamProxy routes insecure HTTP streams via proxy and plays H
 
   // Local/relative paths
   assert.equal(shouldPreferStreamProxy('/api/stream-proxy?url=xyz'), false);
+});
+
+test('tombstone deleted tracking prevents deleted VPN profiles and events from resurfacing', () => {
+  if (typeof globalThis.localStorage === 'undefined') {
+    const store = new Map<string, string>();
+    (globalThis as any).localStorage = {
+      getItem: (key: string) => store.get(key) || null,
+      setItem: (key: string, val: string) => store.set(key, val),
+      removeItem: (key: string) => store.delete(key),
+    };
+  }
+
+  markVpnProfileDeleted('vpn-test-1');
+  assert.ok(getDeletedVpnProfileIds().includes('vpn-test-1'));
+
+  unmarkVpnProfileDeleted('vpn-test-1');
+  assert.ok(!getDeletedVpnProfileIds().includes('vpn-test-1'));
+
+  markEventDeleted('event-test-1');
+  assert.ok(getDeletedEventIds().includes('event-test-1'));
+
+  unmarkEventDeleted('event-test-1');
+  assert.ok(!getDeletedEventIds().includes('event-test-1'));
 });
 
 

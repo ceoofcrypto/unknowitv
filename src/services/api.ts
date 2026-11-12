@@ -28,12 +28,21 @@ import {
   getLocalCustomEvents,
   saveLocalCustomEvent,
   deleteLocalCustomEvent,
+  getDeletedEventIds,
+  markEventDeleted,
+  unmarkEventDeleted,
   getLocalVpnProfiles,
   saveLocalVpnProfile,
   deleteLocalVpnProfile,
+  getDeletedVpnProfileIds,
+  markVpnProfileDeleted,
+  unmarkVpnProfileDeleted,
   getLocalEventMediaSources,
   saveLocalEventMediaSource,
   deleteLocalEventMediaSource,
+  getDeletedEventMediaIds,
+  markEventMediaDeleted,
+  unmarkEventMediaDeleted,
 } from '../utils/storage.ts';
 
 const ADMIN_TOKEN_KEY = 'tapaiko_tv_admin_token';
@@ -201,6 +210,7 @@ export async function deleteChannel(id: string): Promise<void> {
 
 export async function fetchEvents(includeHidden = false): Promise<FeaturedEvent[]> {
   const localEvents = getLocalCustomEvents();
+  const deletedEventIds = new Set(getDeletedEventIds());
   try {
     const res = await fetch('/api/events', {
       headers: getHeaders(includeHidden),
@@ -209,27 +219,40 @@ export async function fetchEvents(includeHidden = false): Promise<FeaturedEvent[
       const serverEvents: FeaturedEvent[] = await res.json();
       const map = new Map<string, FeaturedEvent>();
 
-      // Seed / server events
+      // Seed / server events (omitting explicitly deleted events)
       for (const ev of serverEvents) {
-        map.set(ev.id, ev);
+        if (!deletedEventIds.has(ev.id)) {
+          map.set(ev.id, ev);
+        }
       }
       // Local custom events override/augment
       for (const ev of localEvents) {
-        map.set(ev.id, ev);
+        if (!deletedEventIds.has(ev.id)) {
+          map.set(ev.id, ev);
+        }
       }
 
       const merged = Array.from(map.values());
-      return merged.length > 0 ? merged : INITIAL_EVENTS;
+      // Only fall back to INITIAL_EVENTS if no events exist AND user has not deleted events
+      if (merged.length === 0 && deletedEventIds.size === 0) {
+        return INITIAL_EVENTS;
+      }
+      return merged;
     }
   } catch (err) {
     console.warn('Failed to load events from server, using local store:', err);
   }
 
-  return localEvents.length > 0 ? localEvents : INITIAL_EVENTS;
+  const filteredLocal = localEvents.filter((ev) => !deletedEventIds.has(ev.id));
+  if (filteredLocal.length === 0 && deletedEventIds.size === 0) {
+    return INITIAL_EVENTS;
+  }
+  return filteredLocal;
 }
 
 export async function createEvent(data: Partial<FeaturedEvent>): Promise<FeaturedEvent> {
   const id = data.id || 'event-' + Date.now().toString(36);
+  unmarkEventDeleted(id);
   const now = new Date().toISOString();
   const candidate: FeaturedEvent = {
     id,
@@ -278,6 +301,7 @@ export async function createEvent(data: Partial<FeaturedEvent>): Promise<Feature
 }
 
 export async function updateEvent(id: string, data: Partial<FeaturedEvent>): Promise<FeaturedEvent> {
+  unmarkEventDeleted(id);
   const existingLocal = getLocalCustomEvents().find((e) => e.id === id);
   const updatedCandidate: FeaturedEvent = {
     ...(existingLocal || ({} as any)),
@@ -308,6 +332,7 @@ export async function updateEvent(id: string, data: Partial<FeaturedEvent>): Pro
 }
 
 export async function deleteEvent(id: string): Promise<void> {
+  markEventDeleted(id);
   deleteLocalCustomEvent(id);
   try {
     await fetch(`/api/events/${id}`, {
@@ -497,6 +522,7 @@ export async function syncIptvChannels(): Promise<{
 
 export async function fetchVpnProfiles(): Promise<VpnProfile[]> {
   const local = getLocalVpnProfiles();
+  const deletedVpnIds = new Set(getDeletedVpnProfileIds());
   try {
     const res = await fetch('/api/admin/vpn/profiles', {
       headers: getHeaders(true),
@@ -504,18 +530,27 @@ export async function fetchVpnProfiles(): Promise<VpnProfile[]> {
     if (res.ok) {
       const serverProfiles: VpnProfile[] = await res.json();
       const map = new Map<string, VpnProfile>();
-      for (const p of serverProfiles) map.set(p.id, p);
-      for (const p of local) map.set(p.id, p);
+      for (const p of serverProfiles) {
+        if (!deletedVpnIds.has(p.id)) {
+          map.set(p.id, p);
+        }
+      }
+      for (const p of local) {
+        if (!deletedVpnIds.has(p.id)) {
+          map.set(p.id, p);
+        }
+      }
       return Array.from(map.values());
     }
   } catch (err) {
     console.warn('Failed to load VPN profiles from server, using local store:', err);
   }
-  return local;
+  return local.filter((p) => !deletedVpnIds.has(p.id));
 }
 
 export async function createVpnProfile(data: Partial<VpnProfile>): Promise<VpnProfile> {
   const id = data.id || 'vpn-profile-' + Date.now().toString(36);
+  unmarkVpnProfileDeleted(id);
   const now = new Date().toISOString();
   const candidate: VpnProfile = {
     id,
@@ -563,6 +598,7 @@ export async function createVpnProfile(data: Partial<VpnProfile>): Promise<VpnPr
 }
 
 export async function updateVpnProfile(id: string, data: Partial<VpnProfile>): Promise<VpnProfile> {
+  unmarkVpnProfileDeleted(id);
   const local = getLocalVpnProfiles().find((p) => p.id === id);
   const updatedCandidate: VpnProfile = {
     ...(local || ({} as any)),
@@ -590,6 +626,7 @@ export async function updateVpnProfile(id: string, data: Partial<VpnProfile>): P
 }
 
 export async function deleteVpnProfile(id: string): Promise<void> {
+  markVpnProfileDeleted(id);
   deleteLocalVpnProfile(id);
   try {
     await fetch(`/api/admin/vpn/profiles/${id}`, {
@@ -726,6 +763,8 @@ export async function applyRoutingPresets(): Promise<{
 
 export async function fetchEventMediaSources(): Promise<EventMediaSource[]> {
   const local = getLocalEventMediaSources();
+  const deletedMediaIds = new Set(getDeletedEventMediaIds());
+  const deletedEventIds = new Set(getDeletedEventIds());
   try {
     const res = await fetch('/api/admin/events/media', {
       headers: getHeaders(true),
@@ -733,18 +772,28 @@ export async function fetchEventMediaSources(): Promise<EventMediaSource[]> {
     if (res.ok) {
       const serverMedia: EventMediaSource[] = await res.json();
       const map = new Map<string, EventMediaSource>();
-      for (const m of serverMedia) map.set(m.id, m);
-      for (const m of local) map.set(m.id, m);
+      for (const m of serverMedia) {
+        if (!deletedMediaIds.has(m.id) && (!m.eventId || !deletedEventIds.has(m.eventId))) {
+          map.set(m.id, m);
+        }
+      }
+      for (const m of local) {
+        if (!deletedMediaIds.has(m.id) && (!m.eventId || !deletedEventIds.has(m.eventId))) {
+          map.set(m.id, m);
+        }
+      }
       return Array.from(map.values());
     }
   } catch (err) {
     console.warn('Failed to load event media sources from server, using local store:', err);
   }
-  return local;
+  return local.filter((m) => !deletedMediaIds.has(m.id) && (!m.eventId || !deletedEventIds.has(m.eventId)));
 }
 
 export async function createEventMediaSource(data: Partial<EventMediaSource>): Promise<EventMediaSource> {
   const id = data.id || 'media-src-' + Date.now().toString(36);
+  unmarkEventMediaDeleted(id);
+  if (data.eventId) unmarkEventMediaDeleted(data.eventId);
   const now = new Date().toISOString();
   const candidate: EventMediaSource = {
     id,
@@ -788,6 +837,8 @@ export async function createEventMediaSource(data: Partial<EventMediaSource>): P
 }
 
 export async function updateEventMediaSource(id: string, data: Partial<EventMediaSource>): Promise<EventMediaSource> {
+  unmarkEventMediaDeleted(id);
+  if (data.eventId) unmarkEventMediaDeleted(data.eventId);
   const local = getLocalEventMediaSources().find((m) => m.id === id);
   const updatedCandidate: EventMediaSource = {
     ...(local || ({} as any)),
@@ -815,6 +866,7 @@ export async function updateEventMediaSource(id: string, data: Partial<EventMedi
 }
 
 export async function deleteEventMediaSource(id: string): Promise<void> {
+  markEventMediaDeleted(id);
   deleteLocalEventMediaSource(id);
   try {
     await fetch(`/api/admin/events/media/${id}`, {

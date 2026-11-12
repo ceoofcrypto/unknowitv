@@ -151,7 +151,7 @@ function loadDatabase(): DatabaseState {
           ? parsed.eventMediaSources
           : [];
 
-        const rawEvents = (Array.isArray(parsed.events) && parsed.events.length > 0)
+        const rawEvents = Array.isArray(parsed.events)
           ? parsed.events
           : INITIAL_EVENTS;
 
@@ -221,6 +221,45 @@ app.use(express.json({ limit: '10mb' }));
 // Google Sign-In Admin Session Management (strictly restricted to authorized admin)
 const activeAdminSessions = new Map<string, { email: string; name: string; uid: string; issuedAt: number }>();
 
+const ADMIN_SIGNING_SECRET =
+  process.env.ADMIN_JWT_SECRET ||
+  process.env.SESSION_SECRET ||
+  'tapaiko_tv_openvpn_admin_secure_key_2026';
+
+function createSignedAdminToken(uid: string, email: string, name: string): string {
+  const payload = {
+    uid,
+    email,
+    name,
+    exp: Date.now() + 30 * 24 * 3600 * 1000, // 30 days valid
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = crypto.createHmac('sha256', ADMIN_SIGNING_SECRET).update(payloadB64).digest('base64url');
+  return `${payloadB64}.${sig}`;
+}
+
+function verifySignedAdminToken(token: string): { email: string; name: string; uid: string } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    const [payloadB64, sig] = parts;
+    const expectedSig = crypto.createHmac('sha256', ADMIN_SIGNING_SECRET).update(payloadB64).digest('base64url');
+    if (sig.length !== expectedSig.length) return null;
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+    if (payload && isAdminEmailAuthorized(payload.email) && payload.exp > Date.now()) {
+      return {
+        email: payload.email,
+        name: payload.name || 'Administrator',
+        uid: payload.uid || '',
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function verifyFirebaseAdminJwt(token: string): { email: string; name: string; uid: string } | null {
   try {
     const parts = token.split('.');
@@ -255,15 +294,27 @@ function isValidAdminRequest(req: Request): boolean {
     return false;
   }
   const token = authHeader.split(' ')[1];
+
+  // 1. In-memory session cache
   const session = activeAdminSessions.get(token);
   if (session && isAdminEmailAuthorized(session.email)) {
     return true;
   }
+
+  // 2. Stateless HMAC signed token (survives cold starts & multi-instance lambdas)
+  const signedUser = verifySignedAdminToken(token);
+  if (signedUser) {
+    activeAdminSessions.set(token, { ...signedUser, issuedAt: Date.now() });
+    return true;
+  }
+
+  // 3. Firebase JWT token check
   const jwtUser = verifyFirebaseAdminJwt(token);
   if (jwtUser) {
     activeAdminSessions.set(token, { ...jwtUser, issuedAt: Date.now() });
     return true;
   }
+
   return false;
 }
 
@@ -1157,7 +1208,7 @@ app.post('/api/admin/google-login', (req: Request, res: Response) => {
     });
   }
 
-  const sessionToken = idToken || `tapaiko_google_admin_${crypto.randomBytes(24).toString('hex')}`;
+  const sessionToken = createSignedAdminToken(uid, AUTHORIZED_ADMIN_EMAIL, name || 'Administrator');
   activeAdminSessions.set(sessionToken, {
     email: AUTHORIZED_ADMIN_EMAIL,
     name: name || 'Administrator',
