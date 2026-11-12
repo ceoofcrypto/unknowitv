@@ -232,6 +232,34 @@ export async function syncSettingsToRtdb(settings: AppSettings): Promise<void> {
   }
 }
 
+export function subscribeToRtdbSettings(
+  callback: (settings: AppSettings) => void
+): () => void {
+  const settingsRef = ref(rtdb, 'settings');
+  const unsubscribe = onValue(
+    settingsRef,
+    (snap) => {
+      if (snap.exists()) {
+        const val = snap.val();
+        if (val && typeof val === 'object') {
+          callback(val as AppSettings);
+        }
+      }
+    },
+    (err) => {
+      console.warn('Realtime Database settings listener warning:', err);
+    }
+  );
+
+  return () => {
+    try {
+      off(settingsRef, 'value', unsubscribe);
+    } catch {
+      // Ignore unsubscribe error
+    }
+  };
+}
+
 // ==========================================
 // VPN PROFILES & EVENT MEDIA SOURCES
 // ==========================================

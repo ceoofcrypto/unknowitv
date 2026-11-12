@@ -149,3 +149,4 @@ export const HomepageToast: React.FC<HomepageToastProps> = ({
     </aside>
   );
 };
+

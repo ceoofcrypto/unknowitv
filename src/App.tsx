@@ -20,6 +20,7 @@ import {
   fetchAnnouncements,
   deleteAnnouncement,
   fetchSettings,
+  updateSettings,
   fetchCountries,
   fetchCountryChannels,
   fetchAutoUpdateStatus,
@@ -42,12 +43,18 @@ import {
   getDeletedEventIds,
 } from './utils/storage.ts';
 import { filterChannels, isAdminEmailAuthorized } from './utils/channels.ts';
-import { subscribeToRtdbEvents, subscribeToRtdbAnnouncements, bootstrapRtdbDatabase } from './services/rtdbData.ts';
+import {
+  subscribeToRtdbEvents,
+  subscribeToRtdbAnnouncements,
+  subscribeToRtdbSettings,
+  bootstrapRtdbDatabase,
+} from './services/rtdbData.ts';
 
 import { Header } from './components/layout/Header.tsx';
 import { Footer } from './components/layout/Footer.tsx';
 import { AnnouncementBanner } from './components/layout/AnnouncementBanner.tsx';
 import { HomepageToast } from './components/common/HomepageToast.tsx';
+import { MaintenanceScreen } from './components/common/MaintenanceScreen.tsx';
 import { FeaturedEventHero } from './components/home/FeaturedEventHero.tsx';
 import { CategoryBar } from './components/channels/CategoryBar.tsx';
 import { CountryFilterBar } from './components/channels/CountryFilterBar.tsx';
@@ -64,6 +71,8 @@ import {
   Search,
   Trash2,
   AlertCircle,
+  AlertTriangle,
+  Power,
   Radio,
   ArrowRight,
   Shield,
@@ -182,7 +191,14 @@ export default function App() {
       }
     });
 
-    // 6. Initial Route parsing from URL query / hash
+    // 6. Subscribe to Realtime Database Settings (Maintenance Mode, Hero toggle, branding)
+    const unsubscribeRtdbSettings = subscribeToRtdbSettings((liveSettings) => {
+      if (liveSettings) {
+        setSettings((prev) => ({ ...prev, ...liveSettings }));
+      }
+    });
+
+    // 7. Initial Route parsing from URL query / hash
     const params = new URLSearchParams(window.location.search);
     const channelParam = params.get('channel');
     if (channelParam) {
@@ -227,8 +243,20 @@ export default function App() {
       unsubscribeAuth();
       unsubscribeRtdb();
       unsubscribeRtdbAnn();
+      unsubscribeRtdbSettings();
     };
   }, [loadPlatformData]);
+
+  const handleToggleMaintenance = async () => {
+    if (!adminUser || !settings) return;
+    try {
+      const nextMode = !settings.maintenanceMode;
+      const updated = await updateSettings({ maintenanceMode: nextMode });
+      setSettings(updated);
+    } catch (err) {
+      console.error('Failed to toggle maintenance mode:', err);
+    }
+  };
 
   const handleDeleteAnnouncement = async (id: string) => {
     try {
@@ -443,12 +471,51 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0D11] text-neutral-100 antialiased selection:bg-red-600 selection:text-white">
-      {currentView !== 'admin' && (
+      {/* Top Announcement Banner (only when not in admin view and not in public maintenance view) */}
+      {currentView !== 'admin' && (!settings?.maintenanceMode || adminUser) && (
         <AnnouncementBanner
           announcements={announcements}
           isAdmin={Boolean(adminUser)}
           onDeleteAnnouncement={handleDeleteAnnouncement}
         />
+      )}
+
+      {/* Prominent Sticky Admin Maintenance Notice (displayed across all pages when maintenance is ON and admin is logged in) */}
+      {settings?.maintenanceMode && adminUser && (
+        <div className="sticky top-0 z-50 bg-gradient-to-r from-amber-950 via-amber-900 to-amber-950 border-b border-amber-500/60 shadow-lg px-4 py-2.5 text-amber-200">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <span className="font-extrabold text-neutral-950 bg-amber-400 uppercase text-[10px] px-2 py-0.5 rounded tracking-wider">
+                MAINTENANCE MODE ACTIVE
+              </span>
+              <span className="text-amber-100 text-xs font-medium">
+                Public viewers see the maintenance splash. You have full Administrator access.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleToggleMaintenance}
+                className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition-colors flex items-center gap-1.5 shadow cursor-pointer"
+                title="Deactivate Maintenance Mode and restore public access immediately"
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>Turn Off Maintenance</span>
+              </button>
+              {currentView !== 'admin' && (
+                <button
+                  onClick={() => setCurrentView('admin')}
+                  className="px-2.5 py-1 rounded-lg bg-neutral-900/80 hover:bg-neutral-800 text-amber-300 text-xs font-semibold border border-amber-600/40 transition-colors cursor-pointer"
+                >
+                  Control Room →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       <Header
@@ -463,24 +530,43 @@ export default function App() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-10">
-        {settings?.maintenanceMode && !adminUser && (
-          <div className="p-8 rounded-2xl bg-amber-950/40 border border-amber-800 text-center space-y-4 max-w-xl mx-auto my-12">
-            <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
-            <h2 className="text-xl font-bold text-white">Temporary Maintenance in Progress</h2>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              तपाईंको TV is currently undergoing scheduled platform upgrades. We will be back online shortly.
-            </p>
-            <div className="pt-2">
-              <button
-                onClick={() => setCurrentView('admin')}
-                className="text-xs text-amber-400 hover:underline flex items-center justify-center gap-1 mx-auto"
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>Authorized Administrator Access</span>
-              </button>
-            </div>
-          </div>
-        )}
+        {settings?.maintenanceMode && !adminUser && currentView !== 'admin' ? (
+          <MaintenanceScreen
+            settings={settings}
+            onAdminLogin={() => setCurrentView('admin')}
+          />
+        ) : (
+          <>
+            {/* Prominent in-flow Notice Banner on the Homescreen for Logged-In Administrator */}
+            {settings?.maintenanceMode && adminUser && currentView === 'home' && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-950/60 via-amber-900/40 to-amber-950/60 border border-amber-600/60 shadow-lg shadow-amber-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-sm sm:text-base">Homescreen Maintenance Notice</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-neutral-950 uppercase tracking-wide">
+                        Live Preview Mode
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-200/80 mt-1">
+                      Public visitors cannot browse or stream right now. As an authorized administrator, you are previewing the live catalog.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                  <button
+                    onClick={handleToggleMaintenance}
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                  >
+                    <Power className="w-4 h-4" />
+                    <span>Disable Maintenance Mode</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
         {/* 1. PLAYER VIEW */}
         {currentView === 'player' && activeChannel && (
@@ -891,11 +977,13 @@ export default function App() {
             </section>
           </div>
         )}
+          </>
+        )}
       </main>
 
       <Footer onNavigate={handleNavigate} />
 
-      {currentView === 'home' && (
+      {currentView === 'home' && (!settings?.maintenanceMode || adminUser) && (
         <HomepageToast
           announcements={announcements}
           isAdmin={Boolean(adminUser)}
