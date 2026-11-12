@@ -71,11 +71,16 @@ export interface Category {
   channelCount?: number;
 }
 
+export type AnnouncementType = 'info' | 'warning' | 'live' | 'success';
+export type AnnouncementDisplayLocation = 'banner' | 'toast' | 'both';
+
 export interface Announcement {
   id: string;
   title: string;
   message: string;
   nepaliMessage?: string;
+  type?: AnnouncementType;
+  displayLocation?: AnnouncementDisplayLocation;
   isActive: boolean;
   isPublished: boolean;
   startTime?: string | null;

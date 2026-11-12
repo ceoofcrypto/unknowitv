@@ -174,6 +174,45 @@ export async function syncAnnouncementToRtdb(ann: Announcement): Promise<void> {
   }
 }
 
+export async function deleteAnnouncementFromRtdb(annId: string): Promise<void> {
+  if (!isFirebaseAdminReady()) return;
+  try {
+    await remove(ref(rtdb, `announcements/${annId}`));
+  } catch (err) {
+    console.warn(`Failed to delete announcement ${annId} from RTDB:`, err);
+  }
+}
+
+export function subscribeToRtdbAnnouncements(
+  callback: (announcements: Announcement[]) => void
+): () => void {
+  const annRef = ref(rtdb, 'announcements');
+  const unsubscribe = onValue(
+    annRef,
+    (snap) => {
+      if (snap.exists()) {
+        const val = snap.val();
+        if (val && typeof val === 'object') {
+          callback(Object.values(val) as Announcement[]);
+        }
+      } else {
+        callback([]);
+      }
+    },
+    (err) => {
+      console.warn('Realtime Database announcements listener warning:', err);
+    }
+  );
+
+  return () => {
+    try {
+      off(annRef, 'value', unsubscribe);
+    } catch {
+      // Ignore unsubscribe error
+    }
+  };
+}
+
 export async function getRtdbSettings(): Promise<AppSettings | null> {
   try {
     const snap = await get(ref(rtdb, 'settings'));
@@ -321,3 +360,4 @@ export async function bootstrapRtdbDatabase(
     console.warn('Realtime Database bootstrap notice:', err);
   }
 }
+

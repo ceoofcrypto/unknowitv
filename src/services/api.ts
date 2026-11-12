@@ -34,6 +34,7 @@ import {
   syncCategoryToRtdb,
   getRtdbAnnouncements,
   syncAnnouncementToRtdb,
+  deleteAnnouncementFromRtdb,
   getRtdbSettings,
   syncSettingsToRtdb,
   getRtdbVpnProfiles,
@@ -485,6 +486,19 @@ export async function updateAnnouncement(id: string, data: Partial<Announcement>
   syncAnnouncementToFirestore(updated).catch(() => {});
   syncAnnouncementToRtdb(updated).catch(() => {});
   return updated;
+}
+
+export async function deleteAnnouncement(id: string): Promise<void> {
+  deleteAnnouncementFromRtdb(id).catch(() => {});
+  try {
+    const res = await fetch(`/api/announcements/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(true),
+    });
+    if (!res.ok) throw new Error('Failed to delete announcement');
+  } catch (err) {
+    console.warn('Delete announcement notice:', err);
+  }
 }
 
 export async function fetchSettings(): Promise<AppSettings> {

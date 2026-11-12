@@ -1630,14 +1630,32 @@ app.put('/api/categories/:id', verifyAdmin, (req: Request, res: Response) => {
 });
 
 // Announcements
-app.get('/api/announcements', (req: Request, res: Response) => {
+app.get('/api/announcements', async (req: Request, res: Response) => {
   const isAdmin = isValidAdminRequest(req);
+  let baseAnnouncements = isAdmin
+    ? db.announcements
+    : db.announcements.filter((a) => a.isActive && a.isPublished);
 
-  if (!isAdmin) {
-    const active = db.announcements.filter((a) => a.isActive && a.isPublished);
-    return res.json(active);
+  // Sync with Firebase Realtime Database cloud truth if configured
+  const rtdbUrl = process.env.VITE_FIREBASE_DATABASE_URL || process.env.FIREBASE_DATABASE_URL || 'https://t2tvlogin-default-rtdb.asia-southeast1.firebasedatabase.app';
+  if (rtdbUrl) {
+    try {
+      const cloudRes = await fetch(`${rtdbUrl}/announcements.json`, { signal: AbortSignal.timeout(1800) });
+      if (cloudRes.ok) {
+        const cloudData = await cloudRes.json();
+        if (cloudData && typeof cloudData === 'object') {
+          const cloudList = Object.values(cloudData) as Announcement[];
+          if (cloudList.length > 0) {
+            baseAnnouncements = isAdmin ? cloudList : cloudList.filter((a) => a.isActive && a.isPublished);
+          }
+        }
+      }
+    } catch {
+      // Fallback to memory db.announcements
+    }
   }
-  return res.json(db.announcements);
+
+  return res.json(baseAnnouncements);
 });
 
 app.post('/api/announcements', verifyAdmin, (req: Request, res: Response) => {
@@ -1650,6 +1668,8 @@ app.post('/api/announcements', verifyAdmin, (req: Request, res: Response) => {
     title: body.title.trim(),
     message: body.message.trim(),
     nepaliMessage: body.nepaliMessage?.trim() || '',
+    type: body.type || 'info',
+    displayLocation: body.displayLocation || 'both',
     isActive: body.isActive !== undefined ? Boolean(body.isActive) : true,
     isPublished: body.isPublished !== undefined ? Boolean(body.isPublished) : true,
     startTime: body.startTime || null,
@@ -1671,6 +1691,16 @@ app.put('/api/announcements/:id', verifyAdmin, (req: Request, res: Response) => 
   db.announcements[index] = { ...db.announcements[index], ...req.body, updatedAt: new Date().toISOString() };
   saveDatabase(db);
   res.json(db.announcements[index]);
+});
+
+app.delete('/api/announcements/:id', verifyAdmin, (req: Request, res: Response) => {
+  const index = db.announcements.findIndex((a) => a.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Announcement not found' });
+  }
+  const deleted = db.announcements.splice(index, 1);
+  saveDatabase(db);
+  res.json({ success: true, deleted: deleted[0] });
 });
 
 // Settings

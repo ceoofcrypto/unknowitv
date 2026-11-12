@@ -18,6 +18,7 @@ import {
   fetchEvents,
   fetchCategories,
   fetchAnnouncements,
+  deleteAnnouncement,
   fetchSettings,
   fetchCountries,
   fetchCountryChannels,
@@ -41,11 +42,12 @@ import {
   getDeletedEventIds,
 } from './utils/storage.ts';
 import { filterChannels, isAdminEmailAuthorized } from './utils/channels.ts';
-import { subscribeToRtdbEvents, bootstrapRtdbDatabase } from './services/rtdbData.ts';
+import { subscribeToRtdbEvents, subscribeToRtdbAnnouncements, bootstrapRtdbDatabase } from './services/rtdbData.ts';
 
 import { Header } from './components/layout/Header.tsx';
 import { Footer } from './components/layout/Footer.tsx';
 import { AnnouncementBanner } from './components/layout/AnnouncementBanner.tsx';
+import { HomepageToast } from './components/common/HomepageToast.tsx';
 import { FeaturedEventHero } from './components/home/FeaturedEventHero.tsx';
 import { CategoryBar } from './components/channels/CategoryBar.tsx';
 import { CountryFilterBar } from './components/channels/CountryFilterBar.tsx';
@@ -173,7 +175,14 @@ export default function App() {
       }
     });
 
-    // 4. Initial Route parsing from URL query / hash
+    // 5. Subscribe to Realtime Database Announcements & Toasts
+    const unsubscribeRtdbAnn = subscribeToRtdbAnnouncements((liveAnnouncements) => {
+      if (liveAnnouncements && liveAnnouncements.length >= 0) {
+        setAnnouncements(liveAnnouncements);
+      }
+    });
+
+    // 6. Initial Route parsing from URL query / hash
     const params = new URLSearchParams(window.location.search);
     const channelParam = params.get('channel');
     if (channelParam) {
@@ -192,10 +201,10 @@ export default function App() {
       setCurrentView('admin');
     }
 
-    // 5. Load Initial Data
+    // 7. Load Initial Data
     loadPlatformData();
 
-    // 6. Background Auto-Update Polling (keeps working channels fresh and prunes dead channels automatically)
+    // 8. Background Auto-Update Polling (keeps working channels fresh and prunes dead channels automatically)
     const pollInterval = setInterval(async () => {
       try {
         const [freshChannels, freshCountries, freshStatus] = await Promise.all([
@@ -217,8 +226,18 @@ export default function App() {
       clearInterval(pollInterval);
       unsubscribeAuth();
       unsubscribeRtdb();
+      unsubscribeRtdbAnn();
     };
   }, [loadPlatformData]);
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    try {
+      await deleteAnnouncement(id);
+      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      console.error('Failed to delete announcement:', err);
+    }
+  };
 
   const handleToggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -425,7 +444,11 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0D11] text-neutral-100 antialiased selection:bg-red-600 selection:text-white">
       {currentView !== 'admin' && (
-        <AnnouncementBanner announcements={announcements} />
+        <AnnouncementBanner
+          announcements={announcements}
+          isAdmin={Boolean(adminUser)}
+          onDeleteAnnouncement={handleDeleteAnnouncement}
+        />
       )}
 
       <Header
@@ -871,6 +894,14 @@ export default function App() {
       </main>
 
       <Footer onNavigate={handleNavigate} />
+
+      {currentView === 'home' && (
+        <HomepageToast
+          announcements={announcements}
+          isAdmin={Boolean(adminUser)}
+          onDeleteAnnouncement={handleDeleteAnnouncement}
+        />
+      )}
 
       <CountrySidebarDrawer
         isOpen={countrySidebarOpen}

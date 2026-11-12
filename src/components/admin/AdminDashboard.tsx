@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Channel,
   FeaturedEvent,
   Category,
   Announcement,
+  AnnouncementType,
+  AnnouncementDisplayLocation,
   AppSettings,
   AdminUser,
   VpnProfile,
@@ -18,6 +20,9 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
   updateSettings,
   testStreamAvailability,
   resetDemoData,
@@ -58,6 +63,9 @@ import {
   Sparkles,
   Wand2,
   Globe,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -152,9 +160,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Partial<Category> | null>(null);
 
+  // Navigation Tabs Ref
+  const tabsContainerRef = useRef<HTMLDivElement>(null);
+
   // Announcement Edit/New State
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Partial<Announcement> | null>(null);
+  const [announcementToDelete, setAnnouncementToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [isDeletingAnnouncement, setIsDeletingAnnouncement] = useState(false);
+  const [isSubmittingAnnouncement, setIsSubmittingAnnouncement] = useState(false);
+
+  const scrollTabs = (direction: 'left' | 'right') => {
+    if (tabsContainerRef.current) {
+      const offset = direction === 'left' ? -260 : 260;
+      tabsContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
 
   // Stream tester state
   const [testUrl, setTestUrl] = useState('https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8');
@@ -440,6 +461,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [isSyncingIptv, setIsSyncingIptv] = useState(false);
 
+  const handleSaveAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAnnouncement || !editingAnnouncement.title || !editingAnnouncement.message) {
+      showError('Please provide both title and message for the announcement.');
+      return;
+    }
+
+    setIsSubmittingAnnouncement(true);
+    try {
+      if (editingAnnouncement.id) {
+        await updateAnnouncement(editingAnnouncement.id, editingAnnouncement);
+        showSuccess(`Updated announcement "${editingAnnouncement.title}"`);
+      } else {
+        await createAnnouncement(editingAnnouncement);
+        showSuccess(`Created announcement "${editingAnnouncement.title}"`);
+      }
+      setAnnouncementModalOpen(false);
+      setEditingAnnouncement(null);
+      await onRefreshData();
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : 'Failed to save announcement');
+    } finally {
+      setIsSubmittingAnnouncement(false);
+    }
+  };
+
+  const handleConfirmDeleteAnnouncement = async () => {
+    if (!announcementToDelete) return;
+    setIsDeletingAnnouncement(true);
+    try {
+      await deleteAnnouncement(announcementToDelete.id);
+      showSuccess(`Deleted announcement "${announcementToDelete.title}"`);
+      setAnnouncementToDelete(null);
+      await onRefreshData();
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : 'Failed to delete announcement');
+    } finally {
+      setIsDeletingAnnouncement(false);
+    }
+  };
+
   const handleSyncIptv = async () => {
     setIsSyncingIptv(true);
     try {
@@ -577,117 +639,144 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-neutral-800 scrollbar-none">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'overview' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Activity className="w-3.5 h-3.5" />
-          <span>Overview</span>
-        </button>
+      {/* Navigation Tabs with Visible Scrollbar & Smooth Arrows */}
+      <div className="relative group/nav border-b border-neutral-800 pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => scrollTabs('left')}
+            aria-label="Scroll tabs left"
+            className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-white transition-colors shrink-0 shadow-sm cursor-pointer"
+            title="Scroll tabs left"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
 
-        <button
-          onClick={() => setActiveTab('vpn-gateway')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'vpn-gateway' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>VPN Gateway ({vpnProfiles.length})</span>
-        </button>
+          <div
+            ref={tabsContainerRef}
+            className="flex-1 flex items-center gap-2 overflow-x-auto pb-2.5 pt-0.5 scroll-smooth [scrollbar-width:thin] [scrollbar-color:#52525b_#18181b] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-neutral-900/80 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-neutral-600 hover:[&::-webkit-scrollbar-thumb]:bg-red-500 [&::-webkit-scrollbar-thumb]:rounded-full"
+          >
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'overview' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Overview</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('routing-rules')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'routing-rules' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <GitFork className="w-3.5 h-3.5 text-sky-400" />
-          <span>Selective Routing ({routingRules.length})</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('vpn-gateway')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'vpn-gateway' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5 text-emerald-400" />
+              <span>VPN Gateway ({vpnProfiles.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('event-media')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'event-media' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Radio className="w-3.5 h-3.5 text-red-400" />
-          <span>Event Media ({eventMediaSources.length})</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('routing-rules')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'routing-rules' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <GitFork className="w-3.5 h-3.5 text-sky-400" />
+              <span>Selective Routing ({routingRules.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('vpn-wizard')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'vpn-wizard' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Wand2 className="w-3.5 h-3.5 text-amber-400" />
-          <span>Setup Wizard</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('event-media')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'event-media' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5 text-red-400" />
+              <span>Event Media ({eventMediaSources.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('channels')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'channels' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Tv className="w-3.5 h-3.5" />
-          <span>Channels ({channels.length})</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('vpn-wizard')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'vpn-wizard' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Wand2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Setup Wizard</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('events')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'events' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          <span>Featured Events ({events.length})</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('channels')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'channels' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Tv className="w-3.5 h-3.5" />
+              <span>Channels ({channels.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('categories')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'categories' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Categories ({categories.length})</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('events')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'events' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Featured Events ({events.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('announcements')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'announcements' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Megaphone className="w-3.5 h-3.5" />
-          <span>Announcements</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('categories')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'categories' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Categories ({categories.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('tester')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'tester' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Radio className="w-3.5 h-3.5" />
-          <span>Stream Tester</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('announcements')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'announcements' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Megaphone className="w-3.5 h-3.5" />
+              <span>Announcements ({announcements.length})</span>
+            </button>
 
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-            activeTab === 'settings' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-          }`}
-        >
-          <Settings className="w-3.5 h-3.5" />
-          <span>Settings</span>
-        </button>
+            <button
+              onClick={() => setActiveTab('tester')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'tester' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Stream Tester</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                activeTab === 'settings' ? 'bg-neutral-200 text-neutral-900 font-bold' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>Settings</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => scrollTabs('right')}
+            aria-label="Scroll tabs right"
+            className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-white transition-colors shrink-0 shadow-sm cursor-pointer"
+            title="Scroll tabs right"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* TAB 1: OVERVIEW */}
@@ -1118,42 +1207,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* TAB 5: ANNOUNCEMENTS */}
+      {/* TAB 5: ANNOUNCEMENTS & TOAST MESSAGES */}
       {activeTab === 'announcements' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-neutral-400">Announcements appear at the top of the public website.</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Announcements & Homepage Toast Messages</h3>
+              <p className="text-xs text-neutral-400">
+                Broadcast live match alerts, urgent notices, or floating toast popups on the public homepage.
+              </p>
+            </div>
             <button
               onClick={() => {
                 setEditingAnnouncement({
                   title: '',
                   message: '',
                   nepaliMessage: '',
+                  type: 'info',
+                  displayLocation: 'both',
                   isActive: true,
                   isPublished: true,
-                  displayOrder: 1,
+                  displayOrder: announcements.length + 1,
                 });
                 setAnnouncementModalOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow-md transition-colors cursor-pointer shrink-0"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Announcement</span>
+              <span>Add Announcement / Toast</span>
             </button>
           </div>
 
           <div className="space-y-3">
-            {announcements.map((ann) => (
-              <div key={ann.id} className="p-4 rounded-xl bg-[#181a20] border border-neutral-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white">{ann.title}</h4>
-                  <span className={`text-[10px] px-2 py-0.5 rounded ${ann.isActive && ann.isPublished ? 'bg-emerald-950 text-emerald-400' : 'bg-neutral-800 text-neutral-400'}`}>
-                    {ann.isActive && ann.isPublished ? 'ACTIVE' : 'DRAFT'}
-                  </span>
-                </div>
-                <p className="text-xs text-neutral-300">{ann.message}</p>
+            {announcements.length === 0 ? (
+              <div className="p-8 rounded-xl bg-[#181a20] border border-neutral-800 text-center text-neutral-400 text-xs">
+                No active announcements or toast messages. Click "+ Add Announcement / Toast" to create one.
               </div>
-            ))}
+            ) : (
+              announcements.map((ann) => (
+                <div key={ann.id} className="p-4 rounded-xl bg-[#181a20] border border-neutral-800 hover:border-neutral-700 transition-colors space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-white">{ann.title}</h4>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border ${
+                          ann.type === 'live'
+                            ? 'bg-red-950/60 text-red-400 border-red-800/80'
+                            : ann.type === 'warning'
+                            ? 'bg-amber-950/60 text-amber-400 border-amber-800/80'
+                            : ann.type === 'success'
+                            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800/80'
+                            : 'bg-sky-950/60 text-sky-400 border-sky-800/80'
+                        }`}>
+                          {ann.type === 'live' ? '🔴 Live Alert' : ann.type === 'warning' ? '⚠️ Warning' : ann.type === 'success' ? '✨ Special' : '📢 Notice'}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300">
+                          {ann.displayLocation === 'toast' ? 'Homepage Toast Only' : ann.displayLocation === 'banner' ? 'Top Banner Only' : 'Banner & Toast'}
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${ann.isActive && ann.isPublished ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-neutral-800 text-neutral-400'}`}>
+                          {ann.isActive && ann.isPublished ? 'ACTIVE' : 'DRAFT'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-300 leading-relaxed">{ann.message}</p>
+                      {ann.nepaliMessage && (
+                        <p className="text-xs text-neutral-400 font-devanagari">{ann.nepaliMessage}</p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingAnnouncement(ann);
+                          setAnnouncementModalOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 text-xs transition-colors cursor-pointer"
+                        title="Edit Announcement"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setAnnouncementToDelete({ id: ann.id, title: ann.title })}
+                        className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 border border-red-900/40 text-xs transition-colors cursor-pointer"
+                        title="Delete Announcement"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -1830,6 +1973,166 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         isLoading={isResettingDemo}
         onConfirm={handleConfirmResetDemo}
         onCancel={() => setConfirmResetDemoOpen(false)}
+      />
+
+      {/* ANNOUNCEMENT & TOAST MODAL */}
+      {announcementModalOpen && editingAnnouncement && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#14161b] border border-neutral-800 rounded-2xl p-6 max-w-lg w-full space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  {editingAnnouncement.id ? 'Edit Announcement / Toast' : 'New Announcement / Toast Message'}
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Broadcast live alerts or toast notifications on the homepage.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAnnouncementModalOpen(false)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAnnouncement} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-neutral-300 mb-1 font-medium">Headline / Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingAnnouncement.title || ''}
+                  onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, title: e.target.value })}
+                  placeholder="e.g. NPL Match Today, Welcome Notice"
+                  className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-neutral-300 mb-1 font-medium">Message Body *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={editingAnnouncement.message || ''}
+                  onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, message: e.target.value })}
+                  placeholder="e.g. Karnali Yaks vs Lumbini Lions match is now live! Watch free on तपाईंको TV."
+                  className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-neutral-300 mb-1 font-medium">Nepali Translation (Optional)</label>
+                <input
+                  type="text"
+                  value={editingAnnouncement.nepaliMessage || ''}
+                  onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, nepaliMessage: e.target.value })}
+                  placeholder="e.g. तपाईंको TV मा स्वागत छ"
+                  className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2.5 text-white focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-neutral-300 mb-1 font-medium">Notice Style / Type</label>
+                  <select
+                    value={editingAnnouncement.type || 'info'}
+                    onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, type: e.target.value as AnnouncementType })}
+                    className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white"
+                  >
+                    <option value="live">🔴 Live Broadcast Alert</option>
+                    <option value="info">📢 General Announcement</option>
+                    <option value="warning">⚠️ Notice / Maintenance</option>
+                    <option value="success">✨ Special Update</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-neutral-300 mb-1 font-medium">Display Location</label>
+                  <select
+                    value={editingAnnouncement.displayLocation || 'both'}
+                    onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, displayLocation: e.target.value as AnnouncementDisplayLocation })}
+                    className="w-full bg-[#101114] border border-neutral-800 rounded-lg p-2 text-white"
+                  >
+                    <option value="toast">Homepage Floating Toast Message</option>
+                    <option value="banner">Top Notice Banner Only</option>
+                    <option value="both">Both (Banner & Toast)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingAnnouncement.isActive ?? true}
+                    onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, isActive: e.target.checked })}
+                    className="accent-red-600 rounded"
+                  />
+                  <span>Active</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editingAnnouncement.isPublished ?? true}
+                    onChange={(e) => setEditingAnnouncement({ ...editingAnnouncement, isPublished: e.target.checked })}
+                    className="accent-red-600 rounded"
+                  />
+                  <span>Published on Homepage</span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
+                {editingAnnouncement.id ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingAnnouncement.id && editingAnnouncement.title) {
+                        setAnnouncementToDelete({ id: editingAnnouncement.id, title: editingAnnouncement.title });
+                        setAnnouncementModalOpen(false);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-900/40 text-red-400 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAnnouncementModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingAnnouncement}
+                    className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmittingAnnouncement && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{editingAnnouncement.id ? 'Save Changes' : 'Create Announcement / Toast'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE ANNOUNCEMENT MODAL */}
+      <ConfirmModal
+        isOpen={Boolean(announcementToDelete)}
+        title="Delete Announcement / Toast Message?"
+        message={`Are you sure you want to delete "${announcementToDelete?.title}"? This will remove the announcement and toast notification from the homepage for all users.`}
+        confirmText="Delete Announcement"
+        isLoading={isDeletingAnnouncement}
+        onConfirm={handleConfirmDeleteAnnouncement}
+        onCancel={() => setAnnouncementToDelete(null)}
       />
     </div>
   );
