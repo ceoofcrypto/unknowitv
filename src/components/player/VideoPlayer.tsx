@@ -28,8 +28,6 @@ import {
   ArrowLeft,
   PictureInPicture,
   SkipForward,
-  ExternalLink,
-  Globe,
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -521,23 +519,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 setIsPlaying(true);
               }}
             />
-            {/* Floating Banner for Web Stream Link */}
-            <div className="absolute top-3 left-3 z-30 flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900/90 border border-neutral-700/80 text-emerald-400 text-xs font-semibold backdrop-blur-md shadow-md">
-                <Globe className="w-3.5 h-3.5" />
-                <span>Web Player Stream</span>
-              </span>
-              <a
-                href={effectiveStreamUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 text-white text-xs font-medium backdrop-blur-md transition-colors shadow-md"
-                title="Open stream in a new tab"
-              >
-                <span>Open in Tab</span>
-                <ExternalLink className="w-3 h-3 text-neutral-400" />
-              </a>
-            </div>
           </div>
         ) : (
           <video
@@ -551,6 +532,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             className="w-full h-full object-contain cursor-pointer"
           />
         )}
+
+        {/* Top-Left Broadcast Logo Mark (TapaikoTv) */}
+        <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-20 pointer-events-none select-none flex items-center gap-2">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-black/55 backdrop-blur-md border border-white/10 shadow-lg shadow-black/40">
+            <img
+              src="/logo.png"
+              alt="तपाईंको TV"
+              className="w-6 h-6 rounded-lg object-cover shadow ring-1 ring-white/15"
+            />
+            <span className="text-xs font-bold text-white tracking-tight drop-shadow-sm">
+              तपाईंको TV
+            </span>
+          </div>
+        </div>
+
+        {/* Bottom-Center Broadcast Watermark (tapaikotv) */}
+        <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none select-none">
+          <div className="px-3 py-1 rounded-full bg-black/40 backdrop-blur-[3px] border border-white/10 text-white/50 text-[10px] sm:text-[11px] font-mono font-medium tracking-[0.25em] uppercase shadow-sm">
+            tapaikotv
+          </div>
+        </div>
 
         {/* Loading Overlay */}
         {isLoading && !errorDetails && (
@@ -576,7 +578,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
         {/* Unmute Overlay Notice when autoplay muted */}
         {isMuted && isPlaying && !errorDetails && (
-          <div className="absolute top-4 left-4 z-20">
+          <div className="absolute top-14 left-3 sm:top-16 sm:left-4 z-20">
             <button
               onClick={handleToggleMute}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold shadow-lg backdrop-blur-sm transition-transform active:scale-95 cursor-pointer"
